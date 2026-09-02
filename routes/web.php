@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AuditLogController;
+use App\Http\Controllers\Admin\AuthorizationController;
 use App\Http\Controllers\Admin\AuthorizationImportController;
 use App\Http\Controllers\Admin\PersonnelSyncController;
 use App\Http\Controllers\Admin\WorkdayController;
@@ -31,8 +32,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/personnel-sync', [PersonnelSyncController::class, 'index'])->name('personnel-sync.index');
         Route::post('/personnel-sync', [PersonnelSyncController::class, 'store'])->name('personnel-sync.store');
         Route::get('/authorization-import', [AuthorizationImportController::class, 'index'])->name('authorization-import.index');
+        Route::get('/authorization-import/template', [AuthorizationImportController::class, 'template'])->name('authorization-import.template');
         Route::post('/authorization-import/preview', [AuthorizationImportController::class, 'preview'])->name('authorization-import.preview');
         Route::post('/authorization-import/{batch}/commit', [AuthorizationImportController::class, 'commit'])->name('authorization-import.commit');
+        Route::post('/authorizations', [AuthorizationController::class, 'store'])->name('authorizations.store');
+        Route::delete('/authorizations/{assignment}', [AuthorizationController::class, 'destroy'])->name('authorizations.destroy');
         Route::post('/workdays/import', [WorkdayController::class, 'import'])->name('workdays.import');
         Route::resource('workdays', WorkdayController::class)->only(['index', 'store', 'destroy']);
         Route::get('/audit-logs', AuditLogController::class)->name('audit-logs.index');

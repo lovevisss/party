@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import { Archive, CalendarDays, ClipboardList, Database, FileClock, LayoutDashboard, LogOut, ShieldCheck, Users } from 'lucide-vue-next';
 defineProps<{ title: string; eyebrow?: string }>();
 const page = usePage<any>();
+const validationErrors = computed(() => Object.values(page.props.errors ?? {}) as string[]);
 const roles = computed(() => page.props.auth?.roles?.map((x: any) => x.role) ?? []);
 const isAdmin = computed(() => roles.value.includes('system_admin'));
 const logout = () => router.post('/auth/logout');
@@ -41,7 +42,15 @@ const links = computed(() => [
       <header class="border-b border-[#d9d2c4] bg-[#faf8f3]/95 px-5 py-5 backdrop-blur md:px-9 print:hidden">
         <div class="mx-auto flex max-w-[1320px] items-end justify-between"><div><p class="mb-1 text-[11px] font-semibold uppercase tracking-[.24em] text-[#8b6f35]">{{ eyebrow || '党委会会议纪要管理系统' }}</p><h1 class="font-serif text-2xl font-semibold tracking-tight">{{ title }}</h1></div><div class="hidden items-center gap-2 text-xs text-[#65736e] sm:flex"><ShieldCheck :size="16" class="text-[#2f6a59]" />校内统一认证 · 权限隔离</div></div>
       </header>
-      <div class="mx-auto max-w-[1320px] p-5 md:p-9 print:max-w-none print:p-0"><div v-if="page.props.flash?.success" class="mb-5 border-l-4 border-[#2f6a59] bg-white px-4 py-3 text-sm shadow-sm print:hidden">{{ page.props.flash.success }}</div><div v-if="page.props.flash?.error" class="mb-5 border-l-4 border-[#a6473d] bg-white px-4 py-3 text-sm text-[#8a2f27] shadow-sm print:hidden">{{ page.props.flash.error }}</div><slot /></div>
+      <div class="mx-auto max-w-[1320px] p-5 md:p-9 print:max-w-none print:p-0">
+        <div v-if="page.props.flash?.success" class="mb-5 border-l-4 border-[#2f6a59] bg-white px-4 py-3 text-sm shadow-sm print:hidden">{{ page.props.flash.success }}</div>
+        <div v-if="page.props.flash?.error" class="mb-5 border-l-4 border-[#a6473d] bg-white px-4 py-3 text-sm text-[#8a2f27] shadow-sm print:hidden">{{ page.props.flash.error }}</div>
+        <div v-if="validationErrors.length" class="mb-5 border-l-4 border-[#a6473d] bg-red-50 px-4 py-3 text-sm text-[#8a2f27] shadow-sm print:hidden">
+          <p class="font-medium">操作未完成，请处理以下问题：</p>
+          <ul class="mt-1 list-disc space-y-1 pl-5"><li v-for="error in validationErrors" :key="error">{{ error }}</li></ul>
+        </div>
+        <slot />
+      </div>
     </main>
   </div>
 </template>

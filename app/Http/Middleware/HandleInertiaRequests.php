@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\RoleAssignment;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,7 +41,7 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user()?->loadMissing('roleAssignments'),
-                'roles' => $request->user()?->roleAssignments->map(fn ($assignment) => ['role' => $assignment->role->value, 'organization_id' => $assignment->organization_id])->values() ?? [],
+                'roles' => $request->user()?->roleAssignments->map(fn (RoleAssignment $assignment) => ['role' => (string) $assignment->getRawOriginal('role'), 'organization_id' => $assignment->organization_id])->values() ?? [],
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),

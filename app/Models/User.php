@@ -7,11 +7,11 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -47,8 +47,26 @@ class User extends Authenticatable
         ];
     }
 
-    public function person(): BelongsTo { return $this->belongsTo(Person::class); }
-    public function roleAssignments(): HasMany { return $this->hasMany(RoleAssignment::class); }
-    public function hasRole(string $role): bool { return $this->roleAssignments->contains(fn ($assignment) => $assignment->role->value === $role); }
-    public function organizationIds(): array { return $this->roleAssignments()->where('role', 'college_submitter')->pluck('organization_id')->filter()->unique()->values()->all(); }
+    /** @return BelongsTo<Person, $this> */
+    public function person(): BelongsTo
+    {
+        return $this->belongsTo(Person::class);
+    }
+
+    /** @return HasMany<RoleAssignment, $this> */
+    public function roleAssignments(): HasMany
+    {
+        return $this->hasMany(RoleAssignment::class);
+    }
+
+    public function hasRole(string $role): bool
+    {
+        return $this->roleAssignments()->where('role', $role)->exists();
+    }
+
+    /** @return list<int> */
+    public function organizationIds(): array
+    {
+        return array_values($this->roleAssignments()->where('role', 'college_submitter')->pluck('organization_id')->filter()->map(fn ($id): int => (int) $id)->unique()->all());
+    }
 }
