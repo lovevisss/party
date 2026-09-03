@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\MinuteStatus;
 use App\Models\MeetingMinute;
 use App\Models\Organization;
+use App\Models\ParticipantPreset;
 use App\Services\AuditService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -55,7 +56,11 @@ class MeetingMinuteController extends Controller
     {
         Gate::authorize('create', MeetingMinute::class);
 
-        return Inertia::render('minutes/Form', ['minute' => null, 'organizations' => Organization::whereIn('id', $request->user()->organizationIds())->get(['id', 'name'])]);
+        return Inertia::render('minutes/Form', [
+            'minute' => null,
+            'organizations' => Organization::whereIn('id', $request->user()->organizationIds())->get(['id', 'name']),
+            'participantPresets' => $this->participantPresets($request),
+        ]);
     }
 
     public function store(Request $request, AuditService $audit): RedirectResponse
@@ -86,7 +91,11 @@ class MeetingMinuteController extends Controller
     {
         Gate::authorize('update', $minute);
 
-        return Inertia::render('minutes/Form', ['minute' => $minute->load(['participants', 'files']), 'organizations' => Organization::whereIn('id', $request->user()->organizationIds())->get(['id', 'name'])]);
+        return Inertia::render('minutes/Form', [
+            'minute' => $minute->load(['participants', 'files']),
+            'organizations' => Organization::whereIn('id', $request->user()->organizationIds())->get(['id', 'name']),
+            'participantPresets' => $this->participantPresets($request),
+        ]);
     }
 
     public function update(Request $request, MeetingMinute $minute, AuditService $audit): RedirectResponse
@@ -143,5 +152,15 @@ class MeetingMinuteController extends Controller
         foreach ($participants as $p) {
             $minute->participants()->create($p);
         }
+    }
+
+    private function participantPresets(Request $request): mixed
+    {
+        return ParticipantPreset::query()
+            ->where('user_id', $request->user()->id)
+            ->whereIn('organization_id', $request->user()->organizationIds())
+            ->with(['items.person:id,organization_id,status'])
+            ->orderBy('name')
+            ->get();
     }
 }

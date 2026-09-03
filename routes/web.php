@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\CasController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MeetingMinuteController;
 use App\Http\Controllers\MinuteActionController;
+use App\Http\Controllers\ParticipantPresetController;
 use App\Http\Controllers\PersonSearchController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,6 +23,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::post('/auth/logout', [CasController::class, 'logout'])->name('cas.logout');
     Route::get('/people/search', PersonSearchController::class)->name('people.search');
+    Route::post('/participant-presets', [ParticipantPresetController::class, 'store'])->name('participant-presets.store');
+    Route::delete('/participant-presets/{participantPreset}', [ParticipantPresetController::class, 'destroy'])->name('participant-presets.destroy');
     Route::resource('minutes', MeetingMinuteController::class)->except(['destroy']);
     Route::post('/minutes/{minute}/attachment', [MinuteActionController::class, 'upload'])->name('minutes.attachment');
     Route::post('/minutes/{minute}/archive', [MinuteActionController::class, 'archive'])->name('minutes.archive');
