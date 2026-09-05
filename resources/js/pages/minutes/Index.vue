@@ -1,13 +1,43 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
-import { Plus, Search } from 'lucide-vue-next';
+import {
+    ChevronLeft,
+    ChevronRight,
+    Eye,
+    FileText,
+    Pencil,
+    Plus,
+    Search,
+} from 'lucide-vue-next';
+import { computed, reactive, watch } from 'vue';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
 import MinuteStatus from '@/components/MinuteStatus.vue';
 
+type Filters = {
+    year?: string | number;
+    status?: string;
+    meeting_scope_id?: string | number;
+    overdue?: string | boolean;
+    per_page?: string | number;
+};
+type PageLink = { url: string | null; label: string; active: boolean };
+type Minute = {
+    id: string;
+    title: string | null;
+    current_version: number;
+    meeting_scope: { name: string } | null;
+    meeting_start_at: string | null;
+    archived_at: string | null;
+    meeting_year: number | null;
+    sequence_no: number | null;
+    status: string;
+    is_overdue: boolean;
+    can_edit: boolean;
+};
 const props = defineProps<{
-    minutes: any;
-    organizations: any[];
-    filters: any;
+    minutes: { data: Minute[]; links: PageLink[]; total: number };
+    organizations: { id: string; name: string }[];
+    filters: Filters;
     canCreate: boolean;
     meetingType: {
         value: string;
@@ -17,18 +47,95 @@ const props = defineProps<{
     };
 }>();
 
-const filter: any = { ...props.filters };
+const normalizeFilters = (filters: Filters) => ({
+    ...filters,
+    year: filters.year ?? '',
+    status: filters.status ?? '',
+    meeting_scope_id: filters.meeting_scope_id ?? '',
+});
+const filter = reactive(normalizeFilters(props.filters));
+watch(
+    () => props.filters,
+    (value) => {
+        Object.keys(filter).forEach(
+            (key) => delete filter[key as keyof Filters],
+        );
+        Object.assign(filter, normalizeFilters(value));
+    },
+);
 const apply = () =>
-    router.get(`/minutes/${props.meetingType.slug}`, filter, {
-        preserveState: true,
-        replace: true,
-    });
+    router.get(
+        `/minutes/${props.meetingType.slug}`,
+        { ...filter },
+        {
+            preserveState: true,
+            replace: true,
+        },
+    );
+
+const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+});
+const formatTime = (value: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const parts = Object.fromEntries(
+        dateFormatter
+            .formatToParts(date)
+            .map(({ type, value }) => [type, value]),
+    );
+    return {
+        date: `${parts.year}-${parts.month}-${parts.day}`,
+        time: `${parts.hour}:${parts.minute}`,
+    };
+};
+const rows = computed(() =>
+    props.minutes.data.map((minute) => ({
+        ...minute,
+        meetingTime: formatTime(minute.meeting_start_at),
+        archiveTime: formatTime(minute.archived_at),
+    })),
+);
+const pagination = computed(() =>
+    props.minutes.links.map((link, index, links) => {
+        const direction =
+            index === 0
+                ? 'previous'
+                : index === links.length - 1
+                  ? 'next'
+                  : null;
+        const page = /^\d+$/.test(link.label) ? link.label : null;
+        return {
+            ...link,
+            direction,
+            page,
+            label:
+                direction === 'previous'
+                    ? '上一页'
+                    : direction === 'next'
+                      ? '下一页'
+                      : page
+                        ? `第 ${page} 页`
+                        : '更多页码',
+            navigable:
+                Boolean(link.url) && !link.active && Boolean(direction || page),
+        };
+    }),
+);
 </script>
 
 <template>
     <BusinessLayout :title="meetingType.label" eyebrow="归档台账">
-        <div
-            class="mb-5 flex flex-col gap-4 border border-[#ded7c9] bg-white p-4 md:flex-row md:items-end"
+        <form
+            class="mb-6 grid gap-4 rounded-sm border border-[#ded7c9] bg-white p-5 sm:grid-cols-2 xl:grid-cols-[160px_160px_minmax(180px,1fr)_auto_auto] xl:items-end"
+            @submit.prevent="apply"
         >
             <label class="field">
                 <span>年度</span>
@@ -60,103 +167,207 @@ const apply = () =>
                     </option>
                 </select>
             </label>
-            <button class="btn-secondary" @click="apply">
-                <Search :size="16" />查询
+            <button type="submit" class="btn-secondary self-end rounded-sm">
+                <Search :size="16" aria-hidden="true" />查询
             </button>
             <Link
                 v-if="canCreate"
                 :href="`/minutes/${meetingType.slug}/create`"
-                class="btn-primary md:ml-auto"
+                class="btn-primary self-end rounded-sm xl:ml-4"
             >
-                <Plus :size="16" />新建纪要
+                <Plus :size="16" aria-hidden="true" />新建纪要
             </Link>
-        </div>
+        </form>
 
-        <div class="overflow-x-auto border border-[#ded7c9] bg-white">
-            <table class="w-full min-w-[900px] text-left text-sm">
-                <thead
-                    class="bg-[#f1ede4] text-xs tracking-wider text-[#66716c] uppercase"
+        <section
+            class="min-w-0 overflow-hidden rounded-sm border border-[#ded7c9] bg-white shadow-[0_4px_20px_rgba(48,55,45,.03)]"
+            aria-label="会议纪要列表"
+        >
+            <div v-if="rows.length" class="overflow-x-auto">
+                <table
+                    class="minute-table w-full min-w-[1000px] table-fixed text-left text-sm"
                 >
-                    <tr>
-                        <th>会议名称</th>
-                        <th>{{ meetingType.scope_label }}</th>
-                        <th>会议时间</th>
-                        <th>序号</th>
-                        <th>状态</th>
-                        <th>归档时间</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-[#eee9df]">
-                    <tr
-                        v-for="minute in minutes.data"
-                        :key="minute.id"
-                        class="hover:bg-[#fbfaf7]"
+                    <colgroup>
+                        <col class="w-[25%]" />
+                        <col class="w-[17%]" />
+                        <col class="w-[13%]" />
+                        <col class="w-[11%]" />
+                        <col class="w-[12%]" />
+                        <col class="w-[13%]" />
+                        <col class="w-[9%]" />
+                    </colgroup>
+                    <thead
+                        class="bg-[#f1ede4] text-xs tracking-wide text-[#66716c]"
                     >
-                        <td>
-                            <p class="font-medium">
-                                {{ minute.title || '未命名草稿' }}
-                            </p>
-                            <p class="mt-1 text-xs text-[#87908b]">
-                                版本 {{ minute.current_version }}
-                            </p>
-                        </td>
-                        <td>{{ minute.meeting_scope?.name || '—' }}</td>
-                        <td>
-                            {{
-                                minute.meeting_start_at?.slice(0, 16) ||
-                                '待补充'
-                            }}
-                        </td>
-                        <td>
-                            {{ minute.meeting_year || '—' }} /
-                            {{ minute.sequence_no || '—' }}
-                        </td>
-                        <td>
-                            <MinuteStatus
-                                :status="minute.status"
-                                :overdue="minute.is_overdue"
-                            />
-                        </td>
-                        <td>{{ minute.archived_at?.slice(0, 16) || '—' }}</td>
-                        <td>
-                            <Link
-                                :href="
-                                    minute.can_edit
-                                        ? `/minutes/${minute.id}/edit`
-                                        : `/minutes/${minute.id}`
-                                "
-                                class="font-medium text-[#2f6a59]"
-                            >
-                                {{ minute.can_edit ? '编辑' : '查看' }}
-                            </Link>
-                        </td>
-                    </tr>
-                    <tr v-if="!minutes.data.length">
-                        <td
-                            colspan="7"
-                            class="py-16 text-center text-[#7f8883]"
+                        <tr>
+                            <th scope="col">会议名称</th>
+                            <th scope="col">{{ meetingType.scope_label }}</th>
+                            <th scope="col">会议时间</th>
+                            <th scope="col">序号</th>
+                            <th scope="col">状态</th>
+                            <th scope="col">归档时间</th>
+                            <th scope="col">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="minute in rows"
+                            :key="minute.id"
+                            class="transition-colors hover:bg-[#fbfaf7]"
                         >
-                            当前筛选条件下暂无纪要
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div class="mt-4 flex justify-end gap-2 print:hidden">
-            <Link
-                v-for="link in minutes.links"
-                :key="link.label"
-                :href="link.url || '#'"
-                class="border px-3 py-1.5 text-sm"
-                :class="
-                    link.active
-                        ? 'border-[#2f6a59] bg-[#2f6a59] text-white'
-                        : 'border-[#d8d2c5] bg-white'
-                "
-                v-html="link.label"
-            />
-        </div>
+                            <td>
+                                <p
+                                    class="leading-6 font-medium break-words text-[#173b32]"
+                                >
+                                    {{ minute.title || '未命名草稿' }}
+                                </p>
+                                <p class="mt-1 text-xs text-[#87908b]">
+                                    版本 {{ minute.current_version }}
+                                </p>
+                            </td>
+                            <td class="leading-6 break-words text-[#52625a]">
+                                {{ minute.meeting_scope?.name || '—' }}
+                            </td>
+                            <td class="tabular-nums">
+                                <template v-if="minute.meetingTime"
+                                    ><p>{{ minute.meetingTime.date }}</p>
+                                    <p class="mt-1 text-xs text-[#87908b]">
+                                        {{ minute.meetingTime.time }}
+                                    </p></template
+                                ><span v-else class="text-[#87908b]"
+                                    >待补充</span
+                                >
+                            </td>
+                            <td class="tabular-nums">
+                                <span>{{ minute.meeting_year || '—' }}</span
+                                ><span class="mx-1 text-[#b3bab5]">/</span
+                                ><span>{{ minute.sequence_no || '—' }}</span>
+                            </td>
+                            <td>
+                                <div
+                                    class="flex flex-wrap items-center gap-y-1"
+                                >
+                                    <MinuteStatus
+                                        :status="minute.status"
+                                        :overdue="minute.is_overdue"
+                                    />
+                                </div>
+                            </td>
+                            <td class="tabular-nums">
+                                <template v-if="minute.archiveTime"
+                                    ><p>{{ minute.archiveTime.date }}</p>
+                                    <p class="mt-1 text-xs text-[#87908b]">
+                                        {{ minute.archiveTime.time }}
+                                    </p></template
+                                ><span v-else class="text-[#87908b]">—</span>
+                            </td>
+                            <td>
+                                <Link
+                                    :href="
+                                        minute.can_edit
+                                            ? `/minutes/${minute.id}/edit`
+                                            : `/minutes/${minute.id}`
+                                    "
+                                    class="inline-flex min-h-9 items-center gap-1.5 rounded-sm px-2 font-medium whitespace-nowrap text-[#2f6a59] transition hover:bg-[#edf4ef] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6a59]"
+                                    ><component
+                                        :is="minute.can_edit ? Pencil : Eye"
+                                        :size="15"
+                                        aria-hidden="true"
+                                    />{{
+                                        minute.can_edit ? '编辑' : '查看'
+                                    }}</Link
+                                >
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div
+                v-else
+                class="flex min-h-64 flex-col items-center justify-center gap-3 px-5 py-16 text-center"
+            >
+                <div class="rounded-full bg-[#f4f1ea] p-4 text-[#8b987f]">
+                    <FileText
+                        :size="28"
+                        :stroke-width="1.5"
+                        aria-hidden="true"
+                    />
+                </div>
+                <p class="text-sm font-medium text-[#52625a]">
+                    当前筛选条件下暂无纪要
+                </p>
+                <p class="text-xs text-[#87908b]">
+                    请尝试调整年度、状态或{{ meetingType.scope_label }}筛选条件
+                </p>
+            </div>
+            <footer
+                class="flex flex-wrap items-center justify-between gap-4 border-t border-[#e9e4d9] px-5 py-4 print:hidden"
+            >
+                <p class="text-xs text-[#7b8580]">
+                    共
+                    <span
+                        class="mx-1 text-sm font-medium text-[#263c32] tabular-nums"
+                        >{{ minutes.total }}</span
+                    >
+                    条
+                </p>
+                <nav
+                    class="flex flex-wrap items-center gap-1.5"
+                    aria-label="会议纪要分页"
+                >
+                    <component
+                        :is="link.navigable ? Link : 'button'"
+                        v-for="(link, index) in pagination"
+                        :key="index"
+                        :href="link.navigable ? link.url! : undefined"
+                        :type="link.navigable ? undefined : 'button'"
+                        :disabled="!link.navigable"
+                        :aria-label="link.label"
+                        :title="link.label"
+                        :aria-current="link.active ? 'page' : undefined"
+                        class="inline-flex h-9 min-w-9 items-center justify-center rounded-sm border px-2 text-sm tabular-nums transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6a59]"
+                        :class="
+                            link.active
+                                ? 'border-[#2f6a59] bg-[#2f6a59] text-white'
+                                : link.navigable
+                                  ? 'border-[#ded7c9] bg-white text-[#52625a] hover:border-[#2f6a59] hover:bg-[#f1f6f2] hover:text-[#2f6a59]'
+                                  : 'cursor-default border-transparent text-[#bac1bc]'
+                        "
+                    >
+                        <ChevronLeft
+                            v-if="link.direction === 'previous'"
+                            :size="17"
+                            aria-hidden="true"
+                        /><ChevronRight
+                            v-else-if="link.direction === 'next'"
+                            :size="17"
+                            aria-hidden="true"
+                        /><span v-else>{{ link.page || '…' }}</span>
+                    </component>
+                </nav>
+            </footer>
+        </section>
     </BusinessLayout>
 </template>
+
+<style scoped>
+.minute-table th {
+    height: 44px;
+    padding: 12px 16px;
+    font-weight: 600;
+}
+.minute-table td {
+    height: 76px;
+    border-top: 1px solid #eee9df;
+    padding: 14px 16px;
+    vertical-align: middle;
+}
+.minute-table th:first-child,
+.minute-table td:first-child {
+    padding-left: 24px;
+}
+.minute-table th:last-child,
+.minute-table td:last-child {
+    padding-right: 24px;
+}
+</style>
