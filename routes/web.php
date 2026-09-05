@@ -29,13 +29,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/minutes/{meetingType}', [MeetingMinuteController::class, 'index'])->whereIn('meetingType', ['party-branch', 'party-government-joint'])->name('minutes.type.index');
     Route::get('/minutes/{meetingType}/create', [MeetingMinuteController::class, 'create'])->whereIn('meetingType', ['party-branch', 'party-government-joint'])->name('minutes.create');
     Route::post('/minutes/{meetingType}', [MeetingMinuteController::class, 'store'])->whereIn('meetingType', ['party-branch', 'party-government-joint'])->name('minutes.store');
-    Route::get('/minutes/{minute}/edit', [MeetingMinuteController::class, 'edit'])->name('minutes.edit');
-    Route::put('/minutes/{minute}', [MeetingMinuteController::class, 'update'])->name('minutes.update');
-    Route::get('/minutes/{minute}', [MeetingMinuteController::class, 'show'])->name('minutes.show');
-    Route::post('/minutes/{minute}/attachment', [MinuteActionController::class, 'upload'])->name('minutes.attachment');
-    Route::post('/minutes/{minute}/archive', [MinuteActionController::class, 'archive'])->name('minutes.archive');
-    Route::post('/minutes/{minute}/return', [MinuteActionController::class, 'returnForCorrection'])->name('minutes.return');
-    Route::get('/minutes/{minute}/files/{file}', [MinuteActionController::class, 'download'])->name('minutes.files.download');
+    Route::get('/minutes/{minute}/edit', [MeetingMinuteController::class, 'edit'])->whereUuid('minute')->name('minutes.edit');
+    Route::put('/minutes/{minute}', [MeetingMinuteController::class, 'update'])->whereUuid('minute')->name('minutes.update');
+    Route::get('/minutes/{minute}', [MeetingMinuteController::class, 'show'])->whereUuid('minute')->name('minutes.show');
+    Route::post('/minutes/{minute}/attachment', [MinuteActionController::class, 'upload'])->whereUuid('minute')->name('minutes.attachment');
+    Route::post('/minutes/{minute}/archive', [MinuteActionController::class, 'archive'])->whereUuid('minute')->name('minutes.archive');
+    Route::post('/minutes/{minute}/return', [MinuteActionController::class, 'returnForCorrection'])->whereUuid('minute')->name('minutes.return');
+    Route::get('/minutes/{minute}/files/{file}', [MinuteActionController::class, 'download'])->whereUuid('minute')->name('minutes.files.download');
 
     Route::prefix('admin')->name('admin.')->middleware('role:system_admin')->group(function () {
         Route::get('/personnel-sync', [PersonnelSyncController::class, 'index'])->name('personnel-sync.index');
