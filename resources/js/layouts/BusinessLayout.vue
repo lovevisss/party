@@ -27,7 +27,7 @@ const links = computed(() => [
       <div class="relative flex h-full flex-col px-5 py-7">
         <div class="mb-10 flex items-center gap-3 border-b border-white/15 pb-6">
           <div class="grid size-11 place-items-center rounded-sm bg-[#b99a55] shadow-lg"><Archive :size="22" /></div>
-          <div><p class="font-serif text-lg font-semibold tracking-wide">党委会纪要</p><p class="text-xs text-white/55">规范 · 留痕 · 可追溯</p></div>
+          <div><p class="font-serif text-lg font-semibold tracking-wide">党总支会议纪要</p><p class="text-xs text-white/55">规范 · 留痕 · 可追溯</p></div>
         </div>
         <nav class="space-y-1.5">
           <Link v-for="item in links" :key="item.href" :href="item.href" class="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-white/72 transition hover:bg-white/10 hover:text-white" :class="{ 'bg-white/12 text-white': page.url.startsWith(item.href) }"><component :is="item.icon" :size="17" /><span>{{ item.label }}</span></Link>
@@ -40,7 +40,7 @@ const links = computed(() => [
     </aside>
     <main class="lg:pl-64">
       <header class="border-b border-[#d9d2c4] bg-[#faf8f3]/95 px-5 py-5 backdrop-blur md:px-9 print:hidden">
-        <div class="mx-auto flex max-w-[1320px] items-end justify-between"><div><p class="mb-1 text-[11px] font-semibold uppercase tracking-[.24em] text-[#8b6f35]">{{ eyebrow || '党委会会议纪要管理系统' }}</p><h1 class="font-serif text-2xl font-semibold tracking-tight">{{ title }}</h1></div><div class="hidden items-center gap-2 text-xs text-[#65736e] sm:flex"><ShieldCheck :size="16" class="text-[#2f6a59]" />校内统一认证 · 权限隔离</div></div>
+        <div class="mx-auto flex max-w-[1320px] items-end justify-between"><div><p class="mb-1 text-[11px] font-semibold uppercase tracking-[.24em] text-[#8b6f35]">{{ eyebrow || '党总支会议纪要管理系统' }}</p><h1 class="font-serif text-2xl font-semibold tracking-tight">{{ title }}</h1></div><div class="hidden items-center gap-2 text-xs text-[#65736e] sm:flex"><ShieldCheck :size="16" class="text-[#2f6a59]" />校内统一认证 · 权限隔离</div></div>
       </header>
       <div class="mx-auto max-w-[1320px] p-5 md:p-9 print:max-w-none print:p-0">
         <div v-if="page.props.flash?.success" class="mb-5 border-l-4 border-[#2f6a59] bg-white px-4 py-3 text-sm shadow-sm print:hidden">{{ page.props.flash.success }}</div>

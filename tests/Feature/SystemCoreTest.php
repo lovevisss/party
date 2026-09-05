@@ -149,7 +149,7 @@ test('archive creates immutable version and fixes due date', function () {
     foreach (range(3, 7) as $day) {
         Workday::create(['date' => "2026-09-0$day", 'is_workday' => true]);
     }
-    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_committee', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党委会', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'first_topic_content' => '学习内容', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
+    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_committee', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党总支会议', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'first_topic_content' => '学习内容', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
     foreach (['chair', 'recorder', 'attendee'] as $role) {
         MinuteParticipant::create(['meeting_minute_id' => $minute->id, 'role_type' => $role, 'display_name' => $role, 'is_external' => true]);
     }

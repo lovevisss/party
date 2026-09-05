@@ -27,7 +27,7 @@ test('submitter saves applies and replaces their participant preset with roles',
 
     $this->actingAs($user)->post('/participant-presets', [
         'organization_id' => $organization->id,
-        'name' => '党委会固定名单',
+        'name' => '党总支会议固定名单',
         'participants' => [
             ['person_id' => $chair->id, 'role_type' => 'chair', 'display_name' => $chair->name, 'is_external' => false],
             ['person_id' => $attendee->id, 'role_type' => 'attendee', 'display_name' => $attendee->name, 'is_external' => false],
@@ -40,12 +40,12 @@ test('submitter saves applies and replaces their participant preset with roles',
     $this->actingAs($user)->get('/minutes/create')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('minutes/Form')
         ->has('participantPresets', 1)
-        ->where('participantPresets.0.name', '党委会固定名单')
+        ->where('participantPresets.0.name', '党总支会议固定名单')
         ->has('participantPresets.0.items', 2));
 
     $this->actingAs($user)->post('/participant-presets', [
         'organization_id' => $organization->id,
-        'name' => '党委会固定名单',
+        'name' => '党总支会议固定名单',
         'participants' => [
             ['person_id' => $chair->id, 'role_type' => 'recorder', 'display_name' => $chair->name, 'is_external' => false],
         ],
