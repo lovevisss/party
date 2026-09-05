@@ -2,6 +2,7 @@
 
 use App\Enums\MinuteStatus;
 use App\Models\MeetingMinute;
+use App\Models\MeetingScope;
 use App\Models\MinuteFile;
 use App\Models\MinuteParticipant;
 use App\Models\Organization;
@@ -21,7 +22,18 @@ uses(RefreshDatabase::class);
 function coreUser(string $role, ?Organization $organization = null): User
 {
     $user = User::factory()->create(['cas_account' => fake()->unique()->userName(), 'is_active' => true]);
-    RoleAssignment::create(['user_id' => $user->id, 'role' => $role, 'organization_id' => $organization?->id]);
+    $scope = null;
+    if ($organization && $role === 'minute_submitter') {
+        $scope = MeetingScope::where('meeting_type', 'party_branch')->firstOrFail();
+        $scope->organizations()->syncWithoutDetaching([$organization->id]);
+    }
+    RoleAssignment::create([
+        'user_id' => $user->id,
+        'role' => $role,
+        'meeting_type' => $role === 'system_admin' ? null : 'party_branch',
+        'meeting_scope_id' => $scope?->id,
+        'scope_key' => $role === 'system_admin' ? 'global' : ($role === 'minute_manager' ? 'meeting:party_branch:global' : 'meeting:party_branch:scope:'.$scope?->id),
+    ]);
 
     return $user->fresh('roleAssignments');
 }
@@ -56,10 +68,10 @@ test('third workday defaults to Monday through Friday without calendar records',
 
 test('validation messages identify the exact minute section field and participant row', function () {
     $organization = Organization::create(['external_code' => 'VALIDATION', 'name' => '校验提示单位']);
-    $user = coreUser('college_submitter', $organization);
+    $user = coreUser('minute_submitter', $organization);
     $minute = MeetingMinute::create([
         'organization_id' => $organization->id,
-        'meeting_type' => 'party_committee',
+        'meeting_type' => 'party_branch',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -88,18 +100,18 @@ test('validation messages identify the exact minute section field and participan
 test('college submitter cannot view another organization minute', function () {
     $a = Organization::create(['external_code' => 'A', 'name' => '学院A']);
     $b = Organization::create(['external_code' => 'B', 'name' => '学院B']);
-    $user = coreUser('college_submitter', $a);
-    $minute = MeetingMinute::create(['organization_id' => $b->id, 'meeting_type' => 'party_committee', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
+    $user = coreUser('minute_submitter', $a);
+    $minute = MeetingMinute::create(['organization_id' => $b->id, 'meeting_type' => 'party_branch', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
     $this->actingAs($user)->get("/minutes/{$minute->id}")->assertForbidden();
 });
 
 test('college submitter only sees and edits minutes created by themselves', function () {
     $organization = Organization::create(['external_code' => 'OWN', 'name' => '本单位']);
-    $owner = coreUser('college_submitter', $organization);
-    $colleague = coreUser('college_submitter', $organization);
+    $owner = coreUser('minute_submitter', $organization);
+    $colleague = coreUser('minute_submitter', $organization);
     $ownMinute = MeetingMinute::create([
         'organization_id' => $organization->id,
-        'meeting_type' => 'party_committee',
+        'meeting_type' => 'party_branch',
         'title' => '本人提交的纪要',
         'status' => MinuteStatus::Draft,
         'created_by' => $owner->id,
@@ -107,14 +119,14 @@ test('college submitter only sees and edits minutes created by themselves', func
     ]);
     $colleagueMinute = MeetingMinute::create([
         'organization_id' => $organization->id,
-        'meeting_type' => 'party_committee',
+        'meeting_type' => 'party_branch',
         'title' => '同学院其他人员提交的纪要',
         'status' => MinuteStatus::Draft,
         'created_by' => $colleague->id,
         'updated_by' => $colleague->id,
     ]);
 
-    $this->actingAs($owner)->get('/minutes')->assertOk()->assertInertia(fn (Assert $page) => $page
+    $this->actingAs($owner)->get('/minutes/party-branch')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('minutes/Index')
         ->has('minutes.data', 1)
         ->where('minutes.data.0.id', $ownMinute->id)
@@ -127,14 +139,14 @@ test('college submitter only sees and edits minutes created by themselves', func
 test('system administrator sees every minute but does not edit submitter drafts', function () {
     $organizationA = Organization::create(['external_code' => 'ALL-A', 'name' => '单位A']);
     $organizationB = Organization::create(['external_code' => 'ALL-B', 'name' => '单位B']);
-    $submitterA = coreUser('college_submitter', $organizationA);
-    $submitterB = coreUser('college_submitter', $organizationB);
+    $submitterA = coreUser('minute_submitter', $organizationA);
+    $submitterB = coreUser('minute_submitter', $organizationB);
     $admin = coreUser('system_admin');
 
-    $minuteA = MeetingMinute::create(['organization_id' => $organizationA->id, 'meeting_type' => 'party_committee', 'status' => MinuteStatus::Draft, 'created_by' => $submitterA->id, 'updated_by' => $submitterA->id]);
-    $minuteB = MeetingMinute::create(['organization_id' => $organizationB->id, 'meeting_type' => 'party_committee', 'status' => MinuteStatus::Draft, 'created_by' => $submitterB->id, 'updated_by' => $submitterB->id]);
+    $minuteA = MeetingMinute::create(['organization_id' => $organizationA->id, 'meeting_type' => 'party_branch', 'status' => MinuteStatus::Draft, 'created_by' => $submitterA->id, 'updated_by' => $submitterA->id]);
+    $minuteB = MeetingMinute::create(['organization_id' => $organizationB->id, 'meeting_type' => 'party_branch', 'status' => MinuteStatus::Draft, 'created_by' => $submitterB->id, 'updated_by' => $submitterB->id]);
 
-    $this->actingAs($admin)->get('/minutes')->assertOk()->assertInertia(fn (Assert $page) => $page
+    $this->actingAs($admin)->get('/minutes/party-branch')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('minutes/Index')
         ->has('minutes.data', 2)
         ->where('canCreate', false));
@@ -145,11 +157,11 @@ test('system administrator sees every minute but does not edit submitter drafts'
 
 test('archive creates immutable version and fixes due date', function () {
     $org = Organization::create(['external_code' => 'C', 'name' => '学院C']);
-    $user = coreUser('college_submitter', $org);
+    $user = coreUser('minute_submitter', $org);
     foreach (range(3, 7) as $day) {
         Workday::create(['date' => "2026-09-0$day", 'is_workday' => true]);
     }
-    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_committee', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党总支会议', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'first_topic_content' => '学习内容', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
+    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_branch', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党总支会议', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'first_topic_content' => '学习内容', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
     foreach (['chair', 'recorder', 'attendee'] as $role) {
         MinuteParticipant::create(['meeting_minute_id' => $minute->id, 'role_type' => $role, 'display_name' => $role, 'is_external' => true]);
     }
@@ -160,10 +172,10 @@ test('archive creates immutable version and fixes due date', function () {
 
 test('uploaded attachment is visible while archive validation errors are returned', function () {
     $organization = Organization::create(['external_code' => 'FILES', 'name' => '附件测试单位']);
-    $user = coreUser('college_submitter', $organization);
+    $user = coreUser('minute_submitter', $organization);
     $minute = MeetingMinute::create([
         'organization_id' => $organization->id,
-        'meeting_type' => 'party_committee',
+        'meeting_type' => 'party_branch',
         'meeting_year' => 2026,
         'sequence_no' => 8,
         'title' => '附件展示测试',
@@ -196,10 +208,10 @@ test('uploaded attachment is visible while archive validation errors are returne
 
 test('saving participant changes before archive makes the new roles available to archive', function () {
     $organization = Organization::create(['external_code' => 'SAVE-FIRST', 'name' => '保存后归档单位']);
-    $user = coreUser('college_submitter', $organization);
+    $user = coreUser('minute_submitter', $organization);
     $minute = MeetingMinute::create([
         'organization_id' => $organization->id,
-        'meeting_type' => 'party_committee',
+        'meeting_type' => 'party_branch',
         'meeting_year' => 2026,
         'sequence_no' => 9,
         'title' => '保存后归档测试',

@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MeetingType;
 use App\Enums\MinuteStatus;
 use App\Models\MeetingMinute;
-use App\Models\Organization;
+use App\Models\MeetingScope;
 use App\Models\ParticipantPreset;
 use App\Services\AuditService;
 use Illuminate\Http\RedirectResponse;
@@ -17,17 +18,26 @@ use Inertia\Response;
 
 class MeetingMinuteController extends Controller
 {
-    public function index(Request $request): Response
+    public function redirectToType(Request $request): RedirectResponse
+    {
+        $type = $request->user()->accessibleMeetingTypes()[0] ?? null;
+        abort_unless($type !== null, 403, '当前账号没有会议纪要访问权限。');
+
+        return redirect()->route('minutes.type.index', $type->slug());
+    }
+
+    public function index(Request $request, string $meetingType): Response
     {
         Gate::authorize('viewAny', MeetingMinute::class);
+        $type = $this->type($meetingType);
         $user = $request->user();
-        $query = MeetingMinute::query()->with('participants')->withCount('versions');
-        $canViewAll = $user->hasRole('school_manager') || $user->hasRole('system_admin');
+        abort_unless(in_array($type, $user->accessibleMeetingTypes(), true), 403);
+        $query = MeetingMinute::query()->where('meeting_type', $type->value)->with(['participants', 'meetingScope'])->withCount('versions');
+        $canViewAll = $user->manages($type);
         if (! $canViewAll) {
-            $query->where('created_by', $user->id)
-                ->whereIn('organization_id', $user->organizationIds());
+            $query->where('created_by', $user->id)->whereIn('meeting_scope_id', $user->meetingScopeIds($type));
         }
-        $query->when($request->filled('organization_id'), fn ($q) => $q->where('organization_id', $request->integer('organization_id')))->when($request->filled('year'), fn ($q) => $q->where('meeting_year', $request->integer('year')))->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))->when($request->filled('overdue'), fn ($q) => $q->where('is_overdue', $request->boolean('overdue')));
+        $query->when($request->filled('meeting_scope_id'), fn ($q) => $q->where('meeting_scope_id', $request->integer('meeting_scope_id')))->when($request->filled('year'), fn ($q) => $q->where('meeting_year', $request->integer('year')))->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))->when($request->filled('overdue'), fn ($q) => $q->where('is_overdue', $request->boolean('overdue')));
         $size = in_array($request->integer('per_page'), [20, 50, 100]) ? $request->integer('per_page') : 20;
 
         $minutes = $query->latest('meeting_start_at')
@@ -38,39 +48,43 @@ class MeetingMinuteController extends Controller
                 ...$minute->toArray(),
                 'can_edit' => Gate::forUser($user)->allows('update', $minute),
             ]);
-        $organizations = Organization::query()
-            ->where('is_active', true)
-            ->when(! $canViewAll, fn ($organizationQuery) => $organizationQuery->whereIn('id', $user->organizationIds()))
-            ->orderBy('name')
-            ->get(['id', 'name']);
+        $scopes = MeetingScope::query()->where('meeting_type', $type->value)->where('is_active', true)
+            ->when(! $canViewAll, fn ($scopeQuery) => $scopeQuery->whereIn('id', $user->meetingScopeIds($type)))
+            ->orderBy('display_order')->get(['id', 'name']);
 
         return Inertia::render('minutes/Index', [
             'minutes' => $minutes,
-            'organizations' => $organizations,
-            'filters' => $request->only(['organization_id', 'year', 'status', 'overdue', 'per_page']),
-            'canCreate' => Gate::forUser($user)->allows('create', MeetingMinute::class),
+            'organizations' => $scopes,
+            'meetingType' => $this->typePayload($type),
+            'filters' => $request->only(['meeting_scope_id', 'year', 'status', 'overdue', 'per_page']),
+            'canCreate' => count($user->meetingScopeIds($type)) > 0,
         ]);
     }
 
-    public function create(Request $request): Response
+    public function create(Request $request, string $meetingType): Response
     {
-        Gate::authorize('create', MeetingMinute::class);
+        $type = $this->type($meetingType);
+        $scopeIds = $request->user()->meetingScopeIds($type);
+        abort_unless(count($scopeIds) > 0, 403);
 
         return Inertia::render('minutes/Form', [
             'minute' => null,
-            'organizations' => Organization::whereIn('id', $request->user()->organizationIds())->get(['id', 'name']),
-            'participantPresets' => $this->participantPresets($request),
+            'organizations' => MeetingScope::whereIn('id', $scopeIds)->orderBy('display_order')->get(['id', 'name']),
+            'meetingType' => $this->typePayload($type),
+            'participantPresets' => $this->participantPresets($request, $type, $scopeIds),
         ]);
     }
 
-    public function store(Request $request, AuditService $audit): RedirectResponse
+    public function store(Request $request, string $meetingType, AuditService $audit): RedirectResponse
     {
-        Gate::authorize('create', MeetingMinute::class);
+        $type = $this->type($meetingType);
         $data = $this->draftData($request);
-        $org = $request->integer('organization_id') ?: ($request->user()->organizationIds()[0] ?? null);
-        abort_unless(in_array($org, $request->user()->organizationIds()), 403);
-        $minute = DB::transaction(function () use ($data, $org, $request) {
-            $minute = MeetingMinute::create([...$data, 'organization_id' => $org, 'meeting_type' => 'party_committee', 'status' => MinuteStatus::Draft, 'created_by' => $request->user()->id, 'updated_by' => $request->user()->id]);
+        $scope = $request->integer('meeting_scope_id') ?: $request->integer('organization_id');
+        abort_unless(in_array($scope, $request->user()->meetingScopeIds($type), true), 403);
+        $sourceOrganization = $request->user()->person?->organization_id;
+        abort_unless($sourceOrganization !== null, 422, '当前人员没有所属单位。');
+        $minute = DB::transaction(function () use ($data, $scope, $sourceOrganization, $type, $request) {
+            $minute = MeetingMinute::create([...$data, 'organization_id' => $sourceOrganization, 'meeting_scope_id' => $scope, 'meeting_type' => $type, 'status' => MinuteStatus::Draft, 'created_by' => $request->user()->id, 'updated_by' => $request->user()->id]);
             $this->replaceParticipants($minute, $request->input('participants', []));
 
             return $minute;
@@ -84,7 +98,7 @@ class MeetingMinuteController extends Controller
     {
         Gate::authorize('view', $minute);
 
-        return Inertia::render('minutes/Show', ['minute' => $minute->load(['participants', 'versions', 'files', 'returns'])]);
+        return Inertia::render('minutes/Show', ['minute' => $minute->load(['participants', 'versions', 'files', 'returns', 'meetingScope']), 'meetingType' => $this->typePayload($minute->meeting_type)]);
     }
 
     public function edit(Request $request, MeetingMinute $minute): Response
@@ -93,8 +107,9 @@ class MeetingMinuteController extends Controller
 
         return Inertia::render('minutes/Form', [
             'minute' => $minute->load(['participants', 'files']),
-            'organizations' => Organization::whereIn('id', $request->user()->organizationIds())->get(['id', 'name']),
-            'participantPresets' => $this->participantPresets($request),
+            'organizations' => MeetingScope::whereKey($minute->meeting_scope_id)->get(['id', 'name']),
+            'meetingType' => $this->typePayload($minute->meeting_type),
+            'participantPresets' => $this->participantPresets($request, $minute->meeting_type, [$minute->meeting_scope_id]),
         ]);
     }
 
@@ -107,7 +122,8 @@ class MeetingMinuteController extends Controller
             $affected = MeetingMinute::whereKey($minute->id)->where('lock_version', $lock)->whereIn('status', ['draft', 'returned'])->update([...$data, 'lock_version' => $lock + 1, 'updated_by' => $request->user()->id, 'updated_at' => now()]);
             if (! $affected) {
                 abort(409, '记录已被他人更新，请刷新后重试。');
-            }$this->replaceParticipants($minute, $request->input('participants', []));
+            }
+            $this->replaceParticipants($minute, $request->input('participants', []));
         });
         $audit->record('minutes.updated', $minute);
 
@@ -154,13 +170,26 @@ class MeetingMinuteController extends Controller
         }
     }
 
-    private function participantPresets(Request $request): mixed
+    /** @param list<int> $scopeIds */
+    private function participantPresets(Request $request, MeetingType $type, array $scopeIds): mixed
     {
         return ParticipantPreset::query()
             ->where('user_id', $request->user()->id)
-            ->whereIn('organization_id', $request->user()->organizationIds())
+            ->where('meeting_type', $type->value)
+            ->whereIn('meeting_scope_id', $scopeIds)
             ->with(['items.person:id,organization_id,status'])
             ->orderBy('name')
             ->get();
+    }
+
+    private function type(string $slug): MeetingType
+    {
+        return MeetingType::fromSlug($slug);
+    }
+
+    /** @return array{value:string,slug:string,label:string,scope_label:string} */
+    private function typePayload(MeetingType $type): array
+    {
+        return ['value' => $type->value, 'slug' => $type->slug(), 'label' => $type->label(), 'scope_label' => $type->scopeLabel()];
     }
 }

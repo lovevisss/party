@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\MeetingType;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Person;
@@ -19,10 +20,11 @@ class AuthorizationController extends Controller
         $data = $request->validate([
             'person_id' => ['required', 'integer', 'exists:people,id'],
             'role' => ['required', Rule::enum(UserRole::class)],
-            'position_label' => ['nullable', Rule::in(['组织员', '办公室主任'])],
+            'meeting_type' => ['nullable', Rule::enum(MeetingType::class)],
         ]);
         $person = Person::where('status', 'active')->whereKey((int) $data['person_id'])->firstOrFail();
-        $assignment = $authorizations->grant($person, UserRole::from($data['role']), $data['position_label'] ?? null, $request->user()->id);
+        $type = isset($data['meeting_type']) ? MeetingType::from($data['meeting_type']) : null;
+        $assignment = $authorizations->grant($person, UserRole::from($data['role']), $type, $request->user()->id);
         $audit->record('authorization.granted', $assignment, ['person_id' => $person->id, 'role' => $data['role'], 'scope_key' => $assignment->scope_key]);
 
         return back()->with('success', '人员授权已保存。');

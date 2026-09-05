@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\MeetingType;
 use App\Enums\UserRole;
 use App\Models\Person;
 use App\Models\RoleAssignment;
@@ -12,23 +13,21 @@ use Illuminate\Validation\ValidationException;
 
 class AuthorizationService
 {
-    public function grant(Person $person, UserRole $role, ?string $positionLabel, ?int $grantedBy): RoleAssignment
+    public function __construct(private readonly MeetingScopeService $scopes) {}
+
+    public function grant(Person $person, UserRole $role, ?MeetingType $meetingType, ?int $grantedBy): RoleAssignment
     {
         if ($person->status !== 'active') {
             throw ValidationException::withMessages(['person_id' => '停用人员不能新增授权。']);
         }
 
-        [$organizationId, $positionLabel, $scopeKey] = $this->scope($person, $role, $positionLabel);
+        [$scopeId, $scopeKey] = $this->scope($person, $role, $meetingType);
 
-        return DB::transaction(function () use ($person, $role, $organizationId, $positionLabel, $scopeKey, $grantedBy): RoleAssignment {
+        return DB::transaction(function () use ($person, $role, $meetingType, $scopeId, $scopeKey, $grantedBy): RoleAssignment {
             $user = User::updateOrCreate(
                 ['cas_account' => $person->employee_no],
                 ['person_id' => $person->id, 'name' => $person->name, 'email' => $person->email ?: $person->employee_no.'@invalid.local', 'password' => bcrypt(Str::random(64)), 'is_active' => true],
             );
-
-            if ($role === UserRole::CollegeSubmitter) {
-                RoleAssignment::where('user_id', $user->id)->where('role', $role->value)->where('scope_key', '!=', $scopeKey)->delete();
-            }
 
             $assignment = RoleAssignment::withTrashed()->firstOrNew([
                 'user_id' => $user->id,
@@ -37,15 +36,17 @@ class AuthorizationService
             ]);
             $wasTrashed = $assignment->trashed();
             $assignment->fill([
-                'organization_id' => $organizationId,
-                'position_label' => $positionLabel,
+                'organization_id' => null,
+                'meeting_type' => $meetingType?->value,
+                'meeting_scope_id' => $scopeId,
+                'position_label' => null,
                 'granted_by' => $grantedBy,
             ])->save();
             if ($wasTrashed) {
                 $assignment->restore();
             }
 
-            return $assignment->fresh(['user.person.organization', 'organization']);
+            return $assignment->fresh(['user.person.organization', 'meetingScope']);
         });
     }
 
@@ -58,14 +59,14 @@ class AuthorizationService
         $assignment->delete();
     }
 
-    public function revokeForPerson(Person $person, UserRole $role): ?RoleAssignment
+    public function revokeForPerson(Person $person, UserRole $role, ?MeetingType $meetingType): ?RoleAssignment
     {
         $user = User::where('person_id', $person->id)->first();
         if (! $user) {
             return null;
         }
 
-        $scopeKey = $role === UserRole::CollegeSubmitter ? 'org:'.$person->organization_id : 'global';
+        [, $scopeKey] = $this->scope($person, $role, $meetingType);
         $assignment = RoleAssignment::where('user_id', $user->id)->where('role', $role->value)->where('scope_key', $scopeKey)->first();
         if ($assignment) {
             $this->revoke($assignment);
@@ -74,16 +75,24 @@ class AuthorizationService
         return $assignment;
     }
 
-    /** @return array{int|null,string|null,string} */
-    private function scope(Person $person, UserRole $role, ?string $positionLabel): array
+    /** @return array{int|null,string} */
+    private function scope(Person $person, UserRole $role, ?MeetingType $meetingType): array
     {
-        if ($role !== UserRole::CollegeSubmitter) {
-            return [null, null, 'global'];
+        if ($role === UserRole::SystemAdmin) {
+            return [null, 'global'];
         }
-        if (! in_array($positionLabel, ['组织员', '办公室主任'], true)) {
-            throw ValidationException::withMessages(['position_label' => '学院提交人必须选择组织员或办公室主任。']);
+        if (! $meetingType) {
+            throw ValidationException::withMessages(['meeting_type' => '请选择会议类型。']);
+        }
+        if ($role === UserRole::MinuteManager) {
+            return [null, 'meeting:'.$meetingType->value.':global'];
         }
 
-        return [$person->organization_id, $positionLabel, 'org:'.$person->organization_id];
+        $scope = $this->scopes->scopeForPerson($person, $meetingType);
+        if (! $scope) {
+            throw ValidationException::withMessages(['person_id' => '该人员所属单位未映射到所选会议类型，不能授予提交权限。']);
+        }
+
+        return [$scope->id, 'meeting:'.$meetingType->value.':scope:'.$scope->id];
     }
 }

@@ -70,7 +70,7 @@ class MinutesArchiveService
             $due = $minute->due_at ?: $this->workdays->thirdWorkdayAfter($meetingEnd);
             $overdue = $minute->is_overdue ?? $now->greaterThan($due);
             $snapshot = [
-                'minute' => $minute->only(['organization_id', 'meeting_type', 'meeting_year', 'sequence_no', 'title', 'meeting_start_at', 'meeting_end_at', 'first_topic_content', 'remarks']),
+                'minute' => $minute->only(['organization_id', 'meeting_scope_id', 'meeting_type', 'meeting_year', 'sequence_no', 'title', 'meeting_start_at', 'meeting_end_at', 'first_topic_content', 'remarks']),
                 'participants' => $minute->participants()->get()->map->only(['person_id', 'role_type', 'display_name', 'is_external'])->all(),
             ];
             $versionModel = MinuteVersion::create([

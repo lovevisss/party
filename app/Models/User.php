@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\MeetingType;
+use App\Enums\UserRole;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -59,14 +61,38 @@ class User extends Authenticatable
         return $this->hasMany(RoleAssignment::class);
     }
 
-    public function hasRole(string $role): bool
+    public function hasRole(string $role, ?MeetingType $meetingType = null): bool
     {
-        return $this->roleAssignments()->where('role', $role)->exists();
+        return $this->roleAssignments()->where('role', $role)
+            ->when($meetingType, fn ($query) => $query->where('meeting_type', $meetingType->value))->exists();
+    }
+
+    public function isSystemAdmin(): bool
+    {
+        return $this->hasRole(UserRole::SystemAdmin->value);
+    }
+
+    public function manages(MeetingType $type): bool
+    {
+        return $this->isSystemAdmin() || $this->hasRole(UserRole::MinuteManager->value, $type);
     }
 
     /** @return list<int> */
-    public function organizationIds(): array
+    public function meetingScopeIds(MeetingType $type): array
     {
-        return array_values($this->roleAssignments()->where('role', 'college_submitter')->pluck('organization_id')->filter()->map(fn ($id): int => (int) $id)->unique()->all());
+        return array_values($this->roleAssignments()->where('role', UserRole::MinuteSubmitter->value)
+            ->where('meeting_type', $type->value)->pluck('meeting_scope_id')->filter()
+            ->map(fn ($id): int => (int) $id)->unique()->all());
+    }
+
+    /** @return list<MeetingType> */
+    public function accessibleMeetingTypes(): array
+    {
+        if ($this->isSystemAdmin()) {
+            return MeetingType::cases();
+        }
+
+        return array_values($this->roleAssignments()->whereNotNull('meeting_type')->pluck('meeting_type')->unique()
+            ->map(fn (string|MeetingType $type): MeetingType => $type instanceof MeetingType ? $type : MeetingType::from($type))->values()->all());
     }
 }

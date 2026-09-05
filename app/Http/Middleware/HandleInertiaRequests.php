@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\MeetingType;
 use App\Models\RoleAssignment;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -41,7 +42,8 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user()?->loadMissing('roleAssignments'),
-                'roles' => $request->user()?->roleAssignments->map(fn (RoleAssignment $assignment) => ['role' => (string) $assignment->getRawOriginal('role'), 'organization_id' => $assignment->organization_id])->values() ?? [],
+                'roles' => $request->user()?->roleAssignments->map(fn (RoleAssignment $assignment) => ['role' => (string) $assignment->getRawOriginal('role'), 'meeting_type' => $assignment->getRawOriginal('meeting_type'), 'meeting_scope_id' => $assignment->meeting_scope_id])->values() ?? [],
+                'meeting_types' => $request->user() ? collect($request->user()->accessibleMeetingTypes())->map(fn (MeetingType $type) => ['value' => $type->value, 'slug' => $type->slug(), 'label' => $type->label()])->values() : [],
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),

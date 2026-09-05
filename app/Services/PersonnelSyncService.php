@@ -46,6 +46,7 @@ class PersonnelSyncService
                         $person->exists ? $updated++ : $created++;
                         $person->fill(['organization_id' => $organization->id, 'external_id' => trim((string) $row->xgh), 'cas_account' => trim((string) $row->xgh), 'name' => trim((string) $row->xm), 'email' => $row->dzyx ?: null, 'mobile' => $row->yddh ?: null, 'status' => 'active', 'last_seen_at' => $seenAt])->save();
                     }
+                    app(MeetingScopeService::class)->syncOrganizationMappings();
                     $deactivated = Person::where('status', 'active')->where(fn ($q) => $q->whereNull('last_seen_at')->orWhere('last_seen_at', '<', $seenAt))->update(['status' => 'inactive']);
                     Organization::whereDoesntHave('people', fn ($q) => $q->where('status', 'active'))->update(['is_active' => false]);
                 });

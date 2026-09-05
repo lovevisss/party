@@ -15,11 +15,11 @@ class AuthorizationTemplateService
         }
 
         $strings = [
-            '工号/统一账号', '姓名', '学院代码', '系统角色', '岗位标签', '启用状态',
-            '填写说明', '学院提交人：学院代码必须与人员同步数据一致，岗位标签选择“组织员”或“办公室主任”。',
-            '校级业务管理员、系统管理员：学院代码和岗位标签留空。',
+            '工号/统一账号', '姓名', '会议类型', '权限角色', '启用状态',
+            '填写说明', '会议类型选择“党总支会议纪要”或“党政联席会议纪要”。',
+            '提交人的党总支/学院由人员同步所属单位自动解析，不需要填写范围。',
             '启用状态只能填写“启用”或“停用”；停用表示撤销对应授权。',
-            '系统角色可选：学院提交人、校级业务管理员、系统管理员。',
+            '权限角色可选：会议提交人、会议管理员、系统管理员；系统管理员的会议类型可留空。',
         ];
 
         $zip = new ZipArchive;
@@ -57,19 +57,19 @@ class AuthorizationTemplateService
     private function authorizationSheet(): string
     {
         $cells = '';
-        foreach (range(0, 5) as $index) {
+        foreach (range(0, 4) as $index) {
             $column = chr(65 + $index);
             $cells .= '<c r="'.$column.'1" s="1" t="s"><v>'.$index.'</v></c>';
         }
 
-        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:F1000"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="20" customWidth="1"/><col min="2" max="2" width="16" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="5" width="22" customWidth="1"/><col min="6" max="6" width="14" customWidth="1"/></cols><sheetData><row r="1" ht="24" customHeight="1">'.$cells.'</row></sheetData><autoFilter ref="A1:F1000"/><dataValidations count="3"><dataValidation type="list" allowBlank="0" showErrorMessage="1" errorTitle="角色填写错误" error="请选择列表中的系统角色" sqref="D2:D1000"><formula1>&quot;学院提交人,校级业务管理员,系统管理员&quot;</formula1></dataValidation><dataValidation type="list" allowBlank="1" showErrorMessage="1" errorTitle="岗位填写错误" error="请选择组织员或办公室主任" sqref="E2:E1000"><formula1>&quot;组织员,办公室主任&quot;</formula1></dataValidation><dataValidation type="list" allowBlank="0" showErrorMessage="1" errorTitle="状态填写错误" error="请选择启用或停用" sqref="F2:F1000"><formula1>&quot;启用,停用&quot;</formula1></dataValidation></dataValidations></worksheet>';
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:E1000"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="20" customWidth="1"/><col min="2" max="2" width="16" customWidth="1"/><col min="3" max="4" width="24" customWidth="1"/><col min="5" max="5" width="14" customWidth="1"/></cols><sheetData><row r="1" ht="24" customHeight="1">'.$cells.'</row></sheetData><autoFilter ref="A1:E1000"/><dataValidations count="3"><dataValidation type="list" allowBlank="1" showErrorMessage="1" errorTitle="会议类型填写错误" error="请选择列表中的会议类型" sqref="C2:C1000"><formula1>&quot;党总支会议纪要,党政联席会议纪要&quot;</formula1></dataValidation><dataValidation type="list" allowBlank="0" showErrorMessage="1" errorTitle="角色填写错误" error="请选择列表中的权限角色" sqref="D2:D1000"><formula1>&quot;会议提交人,会议管理员,系统管理员&quot;</formula1></dataValidation><dataValidation type="list" allowBlank="0" showErrorMessage="1" errorTitle="状态填写错误" error="请选择启用或停用" sqref="E2:E1000"><formula1>&quot;启用,停用&quot;</formula1></dataValidation></dataValidations></worksheet>';
     }
 
     private function instructionsSheet(): string
     {
-        $rows = '<row r="1"><c r="A1" s="1" t="s"><v>6</v></c></row>';
-        foreach (range(7, 10) as $index) {
-            $row = $index - 5;
+        $rows = '<row r="1"><c r="A1" s="1" t="s"><v>5</v></c></row>';
+        foreach (range(6, 9) as $index) {
+            $row = $index - 4;
             $rows .= '<row r="'.$row.'"><c r="A'.$row.'" t="s"><v>'.$index.'</v></c></row>';
         }
 

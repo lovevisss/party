@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MeetingType;
 use App\Models\MeetingMinute;
 use App\Models\ParticipantPreset;
 use App\Models\Person;
@@ -19,7 +20,8 @@ class ParticipantPresetController extends Controller
     {
         Gate::authorize('create', MeetingMinute::class);
         $data = $request->validate([
-            'organization_id' => 'required|integer|exists:organizations,id',
+            'meeting_type' => ['required', Rule::enum(MeetingType::class)],
+            'meeting_scope_id' => 'required|integer|exists:meeting_scopes,id',
             'name' => 'required|string|min:2|max:50',
             'participants' => 'required|array|min:1|max:200',
             'participants.*.person_id' => 'nullable|integer|exists:people,id',
@@ -33,13 +35,14 @@ class ParticipantPresetController extends Controller
             'participants.*.role_type.required' => '人员清单第 :position 行：请选择人员角色。',
             'participants.*.display_name.required' => '人员清单第 :position 行：人员姓名不能为空。',
         ], [
-            'organization_id' => '所属学院',
+            'meeting_scope_id' => '会议范围',
             'name' => '清单名称',
             'participants' => '当前人员清单',
         ]);
 
-        $organizationId = (int) $data['organization_id'];
-        abort_unless(in_array($organizationId, $request->user()->organizationIds(), true), 403);
+        $type = MeetingType::from($data['meeting_type']);
+        $scopeId = (int) $data['meeting_scope_id'];
+        abort_unless(in_array($scopeId, $request->user()->meetingScopeIds($type), true), 403);
         foreach ($data['participants'] as $index => $participant) {
             if ($participant['is_external']) {
                 continue;
@@ -54,9 +57,10 @@ class ParticipantPresetController extends Controller
             }
         }
 
-        $preset = DB::transaction(function () use ($request, $data, $organizationId): ParticipantPreset {
+        $preset = DB::transaction(function () use ($request, $data, $type, $scopeId): ParticipantPreset {
             $preset = ParticipantPreset::updateOrCreate(
-                ['user_id' => $request->user()->id, 'organization_id' => $organizationId, 'name' => trim($data['name'])],
+                ['user_id' => $request->user()->id, 'meeting_type' => $type->value, 'meeting_scope_id' => $scopeId, 'name' => trim($data['name'])],
+                ['organization_id' => $request->user()->person?->organization_id],
             );
             $preset->items()->delete();
             foreach ($data['participants'] as $index => $participant) {
@@ -79,7 +83,7 @@ class ParticipantPresetController extends Controller
     public function destroy(Request $request, ParticipantPreset $participantPreset, AuditService $audit): RedirectResponse
     {
         abort_unless($participantPreset->user_id === $request->user()->id, 403);
-        abort_unless(in_array($participantPreset->organization_id, $request->user()->organizationIds(), true), 403);
+        abort_unless(in_array($participantPreset->meeting_scope_id, $request->user()->meetingScopeIds($participantPreset->meeting_type), true), 403);
         $audit->record('participant_preset.deleted', $participantPreset, ['name' => $participantPreset->name]);
         $participantPreset->delete();
 
