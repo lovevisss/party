@@ -40,7 +40,7 @@ class MinutesArchiveService
                     'meeting_start_at.required' => '基本信息第 5 项“开始时间”未填写。',
                     'meeting_end_at.required' => '基本信息第 6 项“结束时间”未填写。',
                     'meeting_end_at.after' => '基本信息第 6 项“结束时间”必须晚于“开始时间”。',
-                    'first_topic_content.required' => '第一议题中的“学习内容”未填写。',
+                    'first_topic_content.required' => '第一议题学习内容未填写。',
                 ],
                 [
                     'meeting_year' => '基本信息第 2 项“会议年度”',
@@ -48,7 +48,7 @@ class MinutesArchiveService
                     'title' => '基本信息第 4 项“会议名称”',
                     'meeting_start_at' => '基本信息第 5 项“开始时间”',
                     'meeting_end_at' => '基本信息第 6 项“结束时间”',
-                    'first_topic_content' => '第一议题中的“学习内容”',
+                    'first_topic_content' => '第一议题学习内容',
                 ],
             )->validate();
 
@@ -59,9 +59,9 @@ class MinutesArchiveService
                 }
             }
 
-            $file = $minute->files()->whereNull('version_no')->latest()->first();
+            $file = $minute->files()->whereNull('version_no')->where('object_key', 'like', '%.pdf')->latest()->first();
             if (! $file) {
-                throw ValidationException::withMessages(['attachment' => '归档前必须上传正式纪要附件。']);
+                throw ValidationException::withMessages(['attachment' => '归档前必须上传主要领导签字的PDF会议纪要。']);
             }
 
             $version = $minute->current_version + 1;

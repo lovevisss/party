@@ -148,7 +148,7 @@ class MeetingMinuteController extends Controller
                 'title' => '基本信息第 4 项“会议名称”',
                 'meeting_start_at' => '基本信息第 5 项“开始时间”',
                 'meeting_end_at' => '基本信息第 6 项“结束时间”',
-                'first_topic_content' => '第一议题中的“学习内容”',
+                'first_topic_content' => '第一议题学习内容',
                 'remarks' => '第一议题中的“备注”',
                 'participants' => '人员情况',
             ],

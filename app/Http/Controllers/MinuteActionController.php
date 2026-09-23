@@ -20,7 +20,7 @@ class MinuteActionController extends Controller
         $request->validate(['attachment' => 'required|file|max:20480']);
         $files->store($minute, $request->file('attachment'), $request->user());
 
-        return back()->with('success', '正式附件已上传。');
+        return back()->with('success', '会议纪要已上传。');
     }
 
     public function archive(Request $request, MeetingMinute $minute, MinutesArchiveService $service): RedirectResponse

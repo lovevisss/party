@@ -15,8 +15,8 @@ class MinuteFileService
     public function store(MeetingMinute $minute, UploadedFile $file, User $user): MinuteFile
     {
         $extension = strtolower($file->getClientOriginalExtension());
-        if (! in_array($extension, ['doc', 'docx', 'pdf'], true)) {
-            throw ValidationException::withMessages(['attachment' => '仅支持 DOC、DOCX 或 PDF 文件。']);
+        if ($extension !== 'pdf') {
+            throw ValidationException::withMessages(['attachment' => '请上传主要领导签字的PDF扫描件。']);
         }
         if ($file->getSize() > 20 * 1024 * 1024) {
             throw ValidationException::withMessages(['attachment' => '附件不能超过 20 MB。']);
@@ -26,11 +26,7 @@ class MinuteFileService
         if ($header === false) {
             throw ValidationException::withMessages(['attachment' => '无法读取上传文件。']);
         }
-        $hasValidHeader = match ($extension) {
-            'pdf' => str_starts_with($header, '%PDF-'),
-            'docx' => str_starts_with($header, "PK\x03\x04"),
-            'doc' => str_starts_with($header, "\xD0\xCF\x11\xE0"),
-        };
+        $hasValidHeader = str_starts_with($header, '%PDF-');
         if (! $hasValidHeader) {
             throw ValidationException::withMessages(['attachment' => '文件内容与扩展名不一致。']);
         }

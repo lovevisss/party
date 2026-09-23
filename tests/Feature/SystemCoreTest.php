@@ -13,7 +13,9 @@ use App\Services\CasAuthenticationService;
 use App\Services\MinutesArchiveService;
 use App\Services\WorkdayService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -168,6 +170,58 @@ test('archive creates immutable version and fixes due date', function () {
     MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'minutes.pdf', 'object_key' => 'test.pdf', 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('a', 64), 'uploaded_by' => $user->id]);
     $result = app(MinutesArchiveService::class)->archive($minute, $user);
     expect($result->status)->toBe(MinuteStatus::Archived)->and($result->current_version)->toBe(1)->and($result->versions)->toHaveCount(1)->and($result->due_at->format('H:i:s'))->toBe('23:59:59');
+});
+
+test('only a PDF meeting minute can be uploaded and used for archive', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'SIGNED-PDF', 'name' => '签字纪要测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $minute = MeetingMinute::create([
+        'organization_id' => $organization->id,
+        'meeting_type' => 'party_branch',
+        'meeting_year' => 2026,
+        'sequence_no' => 1,
+        'title' => '会议纪要PDF测试',
+        'meeting_start_at' => '2026-09-02 09:00:00',
+        'meeting_end_at' => '2026-09-02 10:00:00',
+        'first_topic_content' => '第一议题学习内容',
+        'status' => MinuteStatus::Draft,
+        'created_by' => $user->id,
+        'updated_by' => $user->id,
+    ]);
+    foreach (['chair', 'recorder', 'attendee'] as $role) {
+        MinuteParticipant::create(['meeting_minute_id' => $minute->id, 'role_type' => $role, 'display_name' => $role, 'is_external' => true]);
+    }
+
+    $this->actingAs($user)->post("/minutes/{$minute->id}/attachment", [
+        'attachment' => UploadedFile::fake()->createWithContent('draft.docx', "PK\x03\x04test"),
+    ])->assertSessionHasErrors('attachment');
+
+    MinuteFile::create([
+        'meeting_minute_id' => $minute->id,
+        'original_name' => 'legacy.docx',
+        'object_key' => 'minutes/legacy.docx',
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 10,
+        'sha256' => str_repeat('a', 64),
+        'uploaded_by' => $user->id,
+    ]);
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")
+        ->assertSessionHasErrors(['attachment' => '归档前必须上传主要领导签字的PDF会议纪要。']);
+    expect($minute->fresh()->status)->toBe(MinuteStatus::Draft);
+
+    $this->actingAs($user)->post("/minutes/{$minute->id}/attachment", [
+        'attachment' => UploadedFile::fake()->createWithContent('fake.pdf', 'not actually a PDF'),
+    ])->assertSessionHasErrors('attachment');
+
+    $this->actingAs($user)->post("/minutes/{$minute->id}/attachment", [
+        'attachment' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
+    ])->assertSessionHasNoErrors();
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")
+        ->assertRedirect("/minutes/{$minute->id}");
+
+    expect($minute->fresh()->status)->toBe(MinuteStatus::Archived)
+        ->and($minute->files()->where('version_no', 1)->value('original_name'))->toBe('signed.pdf');
 });
 
 test('uploaded attachment is visible while archive validation errors are returned', function () {

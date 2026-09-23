@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { Link, router, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     Archive,
     BookmarkPlus,
@@ -44,6 +44,7 @@ const form = useForm({
 const attachmentForm = useForm<{ attachment: File | null }>({
     attachment: null,
 });
+const page = usePage<{ errors: Record<string, string> }>();
 const archiving = ref(false);
 const query = ref('');
 const results = ref<any[]>([]);
@@ -59,6 +60,11 @@ const roles: Record<string, string> = {
 };
 const pendingFiles = computed(
     () => props.minute?.files?.filter((file: any) => !file.version_no) ?? [],
+);
+const hasPendingPdf = computed(() =>
+    pendingFiles.value.some((file: any) =>
+        file.object_key?.toLowerCase().endsWith('.pdf'),
+    ),
 );
 const searchMode = ref<'scope' | 'all'>('scope');
 const availablePresets = computed(() =>
@@ -417,8 +423,7 @@ const upload = () => {
                 <div class="section-head">
                     <span>03</span>
                     <div>
-                        <h2>第一议题</h2>
-                        <p>学习内容与会议要点</p>
+                        <h2>第一议题学习内容</h2>
                     </div>
                 </div>
                 <textarea
@@ -443,8 +448,8 @@ const upload = () => {
                 <div class="section-head">
                     <span>04</span>
                     <div>
-                        <h2>正式附件</h2>
-                        <p>DOC / DOCX / PDF，最大 20 MB</p>
+                        <h2>会议纪要 <span class="text-red-700" aria-label="必填">*</span></h2>
+                        <p>请上传主要领导签字的PDF扫描件，最大 20 MB</p>
                     </div>
                 </div>
                 <div v-if="minute" class="space-y-4">
@@ -453,7 +458,7 @@ const upload = () => {
                     >
                         <FileUp class="text-[#8b6f35]" /><input
                             type="file"
-                            accept=".doc,.docx,.pdf"
+                            accept=".pdf,application/pdf"
                             @change="chooseAttachment"
                         /><button
                             type="button"
@@ -467,10 +472,17 @@ const upload = () => {
                             {{
                                 attachmentForm.processing
                                     ? '正在上传…'
-                                    : '上传附件'
+                                    : '上传会议纪要'
                             }}
                         </button>
                     </div>
+                    <p
+                        v-if="attachmentForm.errors.attachment || page.props.errors?.attachment"
+                        class="text-sm text-red-700"
+                        role="alert"
+                    >
+                        {{ attachmentForm.errors.attachment || page.props.errors?.attachment }}
+                    </p>
                     <div
                         v-if="pendingFiles.length"
                         class="border border-[#d8e2dd] bg-[#f5faf7]"
@@ -478,7 +490,7 @@ const upload = () => {
                         <div
                             class="flex items-center gap-2 border-b border-[#d8e2dd] px-4 py-3 text-sm font-medium text-[#245446]"
                         >
-                            <FileCheck2 :size="17" />已上传、待归档附件
+                            <FileCheck2 :size="17" />已上传、待归档的会议纪要
                         </div>
                         <Link
                             v-for="file in pendingFiles"
@@ -494,12 +506,12 @@ const upload = () => {
                             ></Link
                         >
                     </div>
-                    <p v-else class="text-sm text-amber-700">
-                        尚未上传可用于归档的正式附件。
+                    <p v-if="!hasPendingPdf" class="text-sm text-amber-700">
+                        尚未上传主要领导签字的PDF会议纪要，归档前必须上传。
                     </p>
                 </div>
                 <p v-else class="text-sm text-[#7b8580]">
-                    请先保存草稿，再上传正式附件。
+                    请先保存草稿，再上传主要领导签字的PDF会议纪要。
                 </p>
             </section>
             <div
