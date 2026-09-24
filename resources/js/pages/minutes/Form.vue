@@ -65,12 +65,20 @@ watch(
                 `/minutes/deadline?meeting_end_at=${encodeURIComponent(meetingEnd)}`,
                 { signal: controller.signal },
             );
-            if (!response.ok) throw new Error('无法计算截止时间');
+            if (response.status === 404) {
+                throw new Error(
+                    '截止时间接口不存在，请联系管理员检查后端部署与路由缓存。',
+                );
+            }
+            if (!response.ok) throw new Error('截止时间计算失败，请稍后重试。');
             const payload: { due_at: string } = await response.json();
             deadline.value = payload.due_at;
-        } catch {
+        } catch (error) {
             if (!controller.signal.aborted)
-                deadlineError.value = '截止时间计算失败，请稍后重试。';
+                deadlineError.value =
+                    error instanceof Error
+                        ? error.message
+                        : '截止时间计算失败，请稍后重试。';
         } finally {
             if (!controller.signal.aborted) deadlineLoading.value = false;
         }
