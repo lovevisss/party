@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\MeetingType;
 use App\Enums\MinuteStatus;
 use App\Models\MeetingMinute;
 use App\Models\MeetingScope;
 use App\Models\MinuteFile;
 use App\Models\MinuteParticipant;
 use App\Models\Organization;
+use App\Models\Person;
 use App\Models\RoleAssignment;
 use App\Models\User;
 use App\Models\Workday;
@@ -309,6 +311,56 @@ test('only a PDF meeting minute can be uploaded and used for archive', function 
 
     expect($minute->fresh()->status)->toBe(MinuteStatus::Archived)
         ->and($minute->files()->where('version_no', 1)->value('original_name'))->toBe('signed.pdf');
+});
+
+test('a signed PDF can be uploaded from the new minute form without first saving a draft', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'DIRECT-UPLOAD', 'name' => '直接上传测试单位']);
+    $person = Person::create(['organization_id' => $organization->id, 'external_id' => 'DIRECT-1', 'employee_no' => 'DIRECT-1', 'name' => '提交人', 'status' => 'active']);
+    $user = coreUser('minute_submitter', $organization);
+    $user->update(['person_id' => $person->id]);
+    $scope = $user->meetingScopeIds(MeetingType::PartyBranch)[0];
+
+    $this->actingAs($user)->post('/minutes/party-branch', [
+        'meeting_scope_id' => $scope,
+        'attachment' => UploadedFile::fake()->createWithContent('invalid.pdf', 'not a PDF'),
+    ])->assertSessionHasErrors('attachment');
+    expect(MeetingMinute::count())->toBe(0);
+
+    $this->actingAs($user)->post('/minutes/party-branch', [
+        'meeting_scope_id' => $scope,
+        'title' => '填表过程中上传',
+        'first_topic_content' => '已填写的学习内容',
+        'remarks' => '不应再保存的备注',
+        'participants' => [['role_type' => 'chair', 'display_name' => '主持甲', 'is_external' => true]],
+        'attachment' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
+    ])->assertSessionHasNoErrors();
+
+    $minute = MeetingMinute::sole();
+    expect($minute->status)->toBe(MinuteStatus::Draft)
+        ->and($minute->title)->toBe('填表过程中上传')
+        ->and($minute->first_topic_content)->toBe('已填写的学习内容')
+        ->and($minute->remarks)->toBeNull()
+        ->and($minute->participants()->value('display_name'))->toBe('主持甲')
+        ->and($minute->files()->whereNull('version_no')->value('original_name'))->toBe('signed.pdf');
+    Storage::disk(config('filesystems.default'))->assertExists($minute->files()->sole()->object_key);
+});
+
+test('only chair recorder and attendee are required among participant roles', function () {
+    $organization = Organization::create(['external_code' => 'REQUIRED-ROLES', 'name' => '必选角色测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    foreach (['chair', 'recorder', 'attendee'] as $index => $role) {
+        $incomplete = readyMinute($user, $organization, 17 + $index);
+        $incomplete->participants()->where('role_type', $role)->delete();
+        $this->actingAs($user)->post("/minutes/{$incomplete->id}/archive", ['archived_at' => '2026-09-07T10:00'])
+            ->assertSessionHasErrors('participants');
+        expect($incomplete->fresh()->status)->toBe(MinuteStatus::Draft);
+    }
+
+    $minute = readyMinute($user, $organization, 20);
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive", ['archived_at' => '2026-09-07T10:00'])
+        ->assertRedirect("/minutes/{$minute->id}");
+    expect($minute->fresh()->status)->toBe(MinuteStatus::Archived);
 });
 
 test('uploaded attachment is visible while archive validation errors are returned', function () {

@@ -103,12 +103,6 @@ const role: Record<string, string> = {
                     {{ minute.first_topic_content }}
                 </div>
             </section>
-            <section v-if="minute.remarks" class="mt-8">
-                <h2 class="doc-title">备注</h2>
-                <p class="text-sm leading-7 whitespace-pre-wrap">
-                    {{ minute.remarks }}
-                </p>
-            </section>
             <section
                 class="mt-9 grid gap-5 border-t pt-6 text-sm sm:grid-cols-2"
             >

@@ -36,7 +36,6 @@ const form = useForm({
     meeting_start_at: minuteDateTimeInput(props.minute?.meeting_start_at),
     meeting_end_at: minuteDateTimeInput(props.minute?.meeting_end_at),
     first_topic_content: props.minute?.first_topic_content ?? '',
-    remarks: props.minute?.remarks ?? '',
     lock_version: props.minute?.lock_version ?? 0,
     participants: props.minute?.participants ?? [],
 });
@@ -45,8 +44,10 @@ const attachmentForm = useForm<{ attachment: File | null }>({
 });
 const page = usePage<{ errors: Record<string, string> }>();
 const archiving = ref(false);
+const uploading = ref(false);
 const declaredArchivedAt = ref('');
 const archiveError = ref('');
+const participantError = ref('');
 const deadline = ref<string | null>(null);
 const deadlineLoading = ref(false);
 const deadlineError = ref('');
@@ -97,6 +98,13 @@ const roles: Record<string, string> = {
     absent: '缺席人员',
     observer: '列席人员',
 };
+const requiredRoles = ['chair', 'recorder', 'attendee'];
+const missingRequiredRole = computed(() =>
+    requiredRoles.find(
+        (role) =>
+            !form.participants.some((person: any) => person.role_type === role),
+    ),
+);
 const pendingFiles = computed(
     () => props.minute?.files?.filter((file: any) => !file.version_no) ?? [],
 );
@@ -119,6 +127,11 @@ const save = () =>
         : form.post(`/minutes/${props.meetingType.slug}`);
 const archive = () => {
     archiveError.value = '';
+    participantError.value = '';
+    if (missingRequiredRole.value) {
+        participantError.value = `请至少选择一名${roles[missingRequiredRole.value]}。`;
+        return;
+    }
     if (!declaredArchivedAt.value) {
         archiveError.value = '请填写实际归档时间。';
         return;
@@ -141,6 +154,7 @@ const archive = () => {
                 },
                 onError: (errors) => {
                     archiveError.value = errors.archived_at || '';
+                    participantError.value = errors.participants || '';
                 },
             },
         );
@@ -175,6 +189,7 @@ const add = (person: any, role: string | number) => {
             role_type: key,
             is_external: false,
         });
+        participantError.value = '';
     }
 };
 const applyPreset = () => {
@@ -196,6 +211,7 @@ const applyPreset = () => {
         display_name: item.display_name,
         is_external: item.is_external,
     }));
+    participantError.value = '';
     const skipped = preset.items.length - availableItems.length;
     presetMessage.value = skipped
         ? `已套用“${preset.name}”，其中 ${skipped} 名停用人员被跳过。`
@@ -248,11 +264,39 @@ const chooseAttachment = (event: Event) => {
 };
 const upload = () => {
     if (
-        !props.minute ||
         !attachmentForm.attachment ||
-        attachmentForm.processing
+        attachmentForm.processing ||
+        uploading.value
     )
         return;
+    if (!props.minute) {
+        uploading.value = true;
+        form.clearErrors();
+        attachmentForm.clearErrors();
+        router.post(
+            `/minutes/${props.meetingType.slug}`,
+            { ...form.data(), attachment: attachmentForm.attachment },
+            {
+                forceFormData: true,
+                preserveScroll: true,
+                onError: (errors) => {
+                    Object.entries(errors).forEach(([field, message]) => {
+                        if (field === 'attachment')
+                            attachmentForm.setError('attachment', message);
+                        else
+                            form.setError(
+                                field as keyof ReturnType<typeof form.data>,
+                                message,
+                            );
+                    });
+                },
+                onFinish: () => {
+                    uploading.value = false;
+                },
+            },
+        );
+        return;
+    }
     attachmentForm.post(`/minutes/${props.minute.id}/attachment`, {
         forceFormData: true,
         preserveScroll: true,
@@ -467,10 +511,19 @@ const upload = () => {
                             class="rounded border px-2 py-1 text-xs"
                             @click="add(person, key)"
                         >
-                            + {{ label }}
+                            + {{ label
+                            }}<span
+                                v-if="requiredRoles.includes(String(key))"
+                                class="ml-0.5 text-red-700"
+                                aria-label="必选角色"
+                                >*</span
+                            >
                         </button>
                     </div>
                 </div>
+                <p class="mt-3 text-xs text-[#66716c]">
+                    主持人、记录人、参会人员各至少选择一名；缺席人员、列席人员可选。
+                </p>
                 <div class="mt-4 flex flex-wrap gap-2">
                     <span
                         v-for="(person, index) in form.participants"
@@ -485,6 +538,16 @@ const upload = () => {
                             <X :size="13" /></button
                     ></span>
                 </div>
+                <p
+                    v-if="
+                        participantError ||
+                        (page.props.errors?.participants && missingRequiredRole)
+                    "
+                    class="mt-3 text-sm text-red-700"
+                    role="alert"
+                >
+                    {{ participantError || page.props.errors?.participants }}
+                </p>
             </section>
             <section class="form-card">
                 <div class="section-head">
@@ -502,14 +565,6 @@ const upload = () => {
                 <div class="mt-2 text-right text-xs text-[#8a918d]">
                     {{ form.first_topic_content.length }} / 20,000
                 </div>
-                <label class="field mt-4"
-                    ><span>备注</span
-                    ><textarea
-                        v-model="form.remarks"
-                        class="control min-h-20"
-                        maxlength="1000"
-                    />
-                </label>
             </section>
             <section class="form-card">
                 <div class="section-head">
@@ -524,7 +579,7 @@ const upload = () => {
                         <p>请上传主要领导签字的PDF扫描件，最大 20 MB</p>
                     </div>
                 </div>
-                <div v-if="minute" class="space-y-4">
+                <div class="space-y-4">
                     <div
                         class="flex flex-col gap-3 border border-dashed border-[#baa874] bg-[#faf8f1] p-5 sm:flex-row sm:items-center"
                     >
@@ -537,12 +592,13 @@ const upload = () => {
                             class="btn-secondary sm:ml-auto"
                             :disabled="
                                 !attachmentForm.attachment ||
-                                attachmentForm.processing
+                                attachmentForm.processing ||
+                                uploading
                             "
                             @click="upload"
                         >
                             {{
-                                attachmentForm.processing
+                                attachmentForm.processing || uploading
                                     ? '正在上传…'
                                     : '上传会议纪要'
                             }}
@@ -562,7 +618,7 @@ const upload = () => {
                         }}
                     </p>
                     <div
-                        v-if="pendingFiles.length"
+                        v-if="minute && pendingFiles.length"
                         class="border border-[#d8e2dd] bg-[#f5faf7]"
                     >
                         <div
@@ -584,13 +640,13 @@ const upload = () => {
                             ></Link
                         >
                     </div>
-                    <p v-if="!hasPendingPdf" class="text-sm text-amber-700">
+                    <p
+                        v-if="minute && !hasPendingPdf"
+                        class="text-sm text-amber-700"
+                    >
                         尚未上传主要领导签字的PDF会议纪要，归档前必须上传。
                     </p>
                 </div>
-                <p v-else class="text-sm text-[#7b8580]">
-                    请先保存草稿，再上传主要领导签字的PDF会议纪要。
-                </p>
             </section>
             <section v-if="minute" class="form-card">
                 <div class="section-head">
@@ -632,7 +688,7 @@ const upload = () => {
                 <button
                     type="submit"
                     class="btn-secondary"
-                    :disabled="form.processing || archiving"
+                    :disabled="form.processing || archiving || uploading"
                 >
                     <Save :size="16" />{{
                         form.processing ? '正在保存…' : '保存草稿'
@@ -644,7 +700,8 @@ const upload = () => {
                     :disabled="
                         archiving ||
                         form.processing ||
-                        attachmentForm.processing
+                        attachmentForm.processing ||
+                        uploading
                     "
                     @click="archive"
                 >

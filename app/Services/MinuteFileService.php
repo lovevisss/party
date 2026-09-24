@@ -14,6 +14,26 @@ class MinuteFileService
 {
     public function store(MeetingMinute $minute, UploadedFile $file, User $user): MinuteFile
     {
+        $this->validateUpload($file);
+
+        $extension = strtolower($file->getClientOriginalExtension());
+        $disk = config('filesystems.default');
+        $objectKey = 'minutes/'.$minute->id.'/'.Str::uuid().'.'.$extension;
+        Storage::disk($disk)->putFileAs(dirname($objectKey), $file, basename($objectKey), ['visibility' => 'private']);
+
+        return MinuteFile::create([
+            'meeting_minute_id' => $minute->id,
+            'original_name' => $file->getClientOriginalName(),
+            'object_key' => $objectKey,
+            'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
+            'size_bytes' => $file->getSize(),
+            'sha256' => hash_file('sha256', $file->getRealPath()),
+            'uploaded_by' => $user->id,
+        ]);
+    }
+
+    public function validateUpload(UploadedFile $file): void
+    {
         $extension = strtolower($file->getClientOriginalExtension());
         if ($extension !== 'pdf') {
             throw ValidationException::withMessages(['attachment' => '请上传主要领导签字的PDF扫描件。']);
@@ -31,18 +51,5 @@ class MinuteFileService
             throw ValidationException::withMessages(['attachment' => '文件内容与扩展名不一致。']);
         }
 
-        $disk = config('filesystems.default');
-        $objectKey = 'minutes/'.$minute->id.'/'.Str::uuid().'.'.$extension;
-        Storage::disk($disk)->putFileAs(dirname($objectKey), $file, basename($objectKey), ['visibility' => 'private']);
-
-        return MinuteFile::create([
-            'meeting_minute_id' => $minute->id,
-            'original_name' => $file->getClientOriginalName(),
-            'object_key' => $objectKey,
-            'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
-            'size_bytes' => $file->getSize(),
-            'sha256' => hash_file('sha256', $file->getRealPath()),
-            'uploaded_by' => $user->id,
-        ]);
     }
 }

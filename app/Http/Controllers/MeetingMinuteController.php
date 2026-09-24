@@ -8,6 +8,7 @@ use App\Models\MeetingMinute;
 use App\Models\MeetingScope;
 use App\Models\ParticipantPreset;
 use App\Services\AuditService;
+use App\Services\MinuteFileService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -76,23 +77,31 @@ class MeetingMinuteController extends Controller
         ]);
     }
 
-    public function store(Request $request, string $meetingType, AuditService $audit): RedirectResponse
+    public function store(Request $request, string $meetingType, AuditService $audit, MinuteFileService $files): RedirectResponse
     {
         $type = $this->type($meetingType);
         $data = $this->draftData($request);
+        $request->validate(['attachment' => 'nullable|file|max:20480']);
+        $attachment = $request->file('attachment');
+        if ($attachment) {
+            $files->validateUpload($attachment);
+        }
         $scope = $request->integer('meeting_scope_id') ?: $request->integer('organization_id');
         abort_unless(in_array($scope, $request->user()->meetingScopeIds($type), true), 403);
         $sourceOrganization = $request->user()->person?->organization_id;
         abort_unless($sourceOrganization !== null, 422, '当前人员没有所属单位。');
-        $minute = DB::transaction(function () use ($data, $scope, $sourceOrganization, $type, $request) {
+        $minute = DB::transaction(function () use ($data, $scope, $sourceOrganization, $type, $request, $files, $attachment) {
             $minute = MeetingMinute::create([...$data, 'organization_id' => $sourceOrganization, 'meeting_scope_id' => $scope, 'meeting_type' => $type, 'status' => MinuteStatus::Draft, 'created_by' => $request->user()->id, 'updated_by' => $request->user()->id]);
             $this->replaceParticipants($minute, $request->input('participants', []));
+            if ($attachment) {
+                $files->store($minute, $attachment, $request->user());
+            }
 
             return $minute;
         });
         $audit->record('minutes.created', $minute);
 
-        return redirect()->route('minutes.edit', $minute)->with('success', '草稿已保存。');
+        return redirect()->route('minutes.edit', $minute)->with('success', $attachment ? '会议纪要已上传，草稿已自动保存。' : '草稿已保存。');
     }
 
     public function show(MeetingMinute $minute): Response
@@ -135,7 +144,7 @@ class MeetingMinuteController extends Controller
     private function draftData(Request $request): array
     {
         $data = $request->validate(
-            ['meeting_year' => 'nullable|integer|min:2000|max:2100', 'sequence_no' => 'nullable|integer|min:1|max:999', 'title' => 'nullable|string|max:200', 'meeting_start_at' => 'nullable|date', 'meeting_end_at' => 'nullable|date|after:meeting_start_at', 'first_topic_content' => 'nullable|string|max:20000', 'remarks' => 'nullable|string|max:1000', 'participants' => 'array', 'participants.*.person_id' => 'nullable|exists:people,id', 'participants.*.role_type' => ['required', Rule::in(['chair', 'recorder', 'attendee', 'absent', 'observer'])], 'participants.*.display_name' => 'required|string|max:100', 'participants.*.is_external' => 'boolean'],
+            ['meeting_year' => 'nullable|integer|min:2000|max:2100', 'sequence_no' => 'nullable|integer|min:1|max:999', 'title' => 'nullable|string|max:200', 'meeting_start_at' => 'nullable|date', 'meeting_end_at' => 'nullable|date|after:meeting_start_at', 'first_topic_content' => 'nullable|string|max:20000', 'participants' => 'array', 'participants.*.person_id' => 'nullable|exists:people,id', 'participants.*.role_type' => ['required', Rule::in(['chair', 'recorder', 'attendee', 'absent', 'observer'])], 'participants.*.display_name' => 'required|string|max:100', 'participants.*.is_external' => 'boolean'],
             [
                 'meeting_end_at.after' => '基本信息第 6 项“结束时间”必须晚于“开始时间”。',
                 'participants.*.person_id.exists' => '人员情况第 :position 行：所选人员不存在或已停用。',
@@ -150,7 +159,6 @@ class MeetingMinuteController extends Controller
                 'meeting_start_at' => '基本信息第 5 项“开始时间”',
                 'meeting_end_at' => '基本信息第 6 项“结束时间”',
                 'first_topic_content' => '第一议题学习内容',
-                'remarks' => '第一议题中的“备注”',
                 'participants' => '人员情况',
             ],
         );
