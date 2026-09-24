@@ -42,13 +42,16 @@ class MeetingScopeService
             if ($branchName && ($scope = $scopes->get(MeetingType::PartyBranch->value.'|'.$branchName))) {
                 $scope->organizations()->syncWithoutDetaching([$organization->id]);
             }
-            if ($branchName === '机关党总支' && ($scope = $scopes->get(MeetingType::PartyGovernmentJoint->value.'|机关党总支'))) {
-                $scope->organizations()->syncWithoutDetaching([$organization->id]);
-            }
             if (preg_match('/^10030[1-9]$|^100310$/', $organization->external_code)) {
                 $scope = $scopes->get(MeetingType::PartyGovernmentJoint->value.'|'.$organization->name);
                 $scope?->organizations()->syncWithoutDetaching([$organization->id]);
             }
+        }
+
+        $branchOrgan = $scopes->get(MeetingType::PartyBranch->value.'|机关党总支');
+        $jointOrgan = $scopes->get(MeetingType::PartyGovernmentJoint->value.'|机关党总支');
+        if ($branchOrgan && $jointOrgan) {
+            $jointOrgan->organizations()->syncWithoutDetaching($this->organizationIds($branchOrgan));
         }
     }
 

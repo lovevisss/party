@@ -44,6 +44,41 @@ test('an organ employee can receive joint meeting submitter access without chang
     expect($assignment->meeting_scope_id)->toBe($scope->id);
 });
 
+test('an existing party branch organ association is repaired for joint meetings', function () {
+    $organization = Organization::create(['external_code' => 'OTHER-ORGAN', 'name' => '党委办公室、院长办公室', 'is_active' => true]);
+    $branchOrgan = MeetingScope::where('meeting_type', MeetingType::PartyBranch->value)->where('code', 'organ')->firstOrFail();
+    $jointOrgan = MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->where('code', 'organ')->firstOrFail();
+    $branchOrgan->organizations()->attach($organization->id);
+    $person = Person::create(['organization_id' => $organization->id, 'external_id' => 'O002', 'employee_no' => 'O002', 'name' => '机关人员', 'status' => 'active']);
+
+    expect(app(MeetingScopeService::class)->scopeForPerson($person, MeetingType::PartyBranch)?->id)->toBe($branchOrgan->id)
+        ->and(app(MeetingScopeService::class)->scopeForPerson($person, MeetingType::PartyGovernmentJoint))->toBeNull();
+
+    $migration = require database_path('migrations/2026_09_24_000800_sync_joint_organ_scope_organizations.php');
+    $migration->up();
+    $migration->up();
+
+    expect($jointOrgan->organizations()->whereKey($organization->id)->count())->toBe(1)
+        ->and(app(MeetingScopeService::class)->scopeForPerson($person, MeetingType::PartyGovernmentJoint)?->id)->toBe($jointOrgan->id);
+    $assignment = app(AuthorizationService::class)->grant($person, UserRole::MinuteSubmitter, MeetingType::PartyGovernmentJoint, null);
+    expect($assignment->meeting_scope_id)->toBe($jointOrgan->id);
+});
+
+test('personnel mapping sync inherits manually associated organ units without affecting college scopes', function () {
+    $organization = Organization::create(['external_code' => 'OTHER-ORGAN', 'name' => '党委办公室、院长办公室', 'is_active' => true]);
+    $college = Organization::create(['external_code' => '100309', 'name' => '创业学院、继续教育学院', 'is_active' => true]);
+    $branchOrgan = MeetingScope::where('meeting_type', MeetingType::PartyBranch->value)->where('code', 'organ')->firstOrFail();
+    $jointOrgan = MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->where('code', 'organ')->firstOrFail();
+    $branchOrgan->organizations()->attach($organization->id);
+
+    app(MeetingScopeService::class)->syncOrganizationMappings();
+    app(MeetingScopeService::class)->syncOrganizationMappings();
+
+    expect($jointOrgan->organizations()->whereKey($organization->id)->count())->toBe(1)
+        ->and($jointOrgan->organizations()->whereKey($college->id)->exists())->toBeFalse()
+        ->and(MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->where('code', 'college-100309')->firstOrFail()->organizations()->whereKey($college->id)->exists())->toBeTrue();
+});
+
 test('the same person can hold independent submitter roles for both meeting types', function () {
     $organization = Organization::create(['external_code' => '100301', 'name' => '金融与经贸学院', 'is_active' => true]);
     app(MeetingScopeService::class)->syncOrganizationMappings();
