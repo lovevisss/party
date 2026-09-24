@@ -16,6 +16,6 @@ const labels: any = { draft: '草稿', archived: '已归档', returned: '已退�
     ><span
         v-if="overdue"
         class="ml-1 inline-flex rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
-        >逾期</span
+        >超时</span
     >
 </template>

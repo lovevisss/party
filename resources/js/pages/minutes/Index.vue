@@ -12,6 +12,7 @@ import {
 import { computed, reactive, watch } from 'vue';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
 import MinuteStatus from '@/components/MinuteStatus.vue';
+import { minuteDateParts } from '@/lib/minuteDateTime';
 
 type Filters = {
     year?: string | number;
@@ -52,6 +53,7 @@ const normalizeFilters = (filters: Filters) => ({
     year: filters.year ?? '',
     status: filters.status ?? '',
     meeting_scope_id: filters.meeting_scope_id ?? '',
+    overdue: filters.overdue == null ? '' : String(filters.overdue),
 });
 const filter = reactive(normalizeFilters(props.filters));
 watch(
@@ -73,34 +75,11 @@ const apply = () =>
         },
     );
 
-const dateFormatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-});
-const formatTime = (value: string | null) => {
-    if (!value) return null;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
-    const parts = Object.fromEntries(
-        dateFormatter
-            .formatToParts(date)
-            .map(({ type, value }) => [type, value]),
-    );
-    return {
-        date: `${parts.year}-${parts.month}-${parts.day}`,
-        time: `${parts.hour}:${parts.minute}`,
-    };
-};
 const rows = computed(() =>
     props.minutes.data.map((minute) => ({
         ...minute,
-        meetingTime: formatTime(minute.meeting_start_at),
-        archiveTime: formatTime(minute.archived_at),
+        meetingTime: minuteDateParts(minute.meeting_start_at),
+        archiveTime: minuteDateParts(minute.archived_at),
     })),
 );
 const pagination = computed(() =>
@@ -134,7 +113,7 @@ const pagination = computed(() =>
 <template>
     <BusinessLayout :title="meetingType.label" eyebrow="归档台账">
         <form
-            class="mb-6 grid gap-4 rounded-sm border border-[#ded7c9] bg-white p-5 sm:grid-cols-2 xl:grid-cols-[160px_160px_minmax(180px,1fr)_auto_auto] xl:items-end"
+            class="mb-6 grid gap-4 rounded-sm border border-[#ded7c9] bg-white p-5 sm:grid-cols-2 lg:grid-cols-[150px_160px_minmax(180px,1fr)] 2xl:grid-cols-[140px_150px_minmax(180px,1fr)_170px_auto_auto] 2xl:items-end"
             @submit.prevent="apply"
         >
             <label class="field">
@@ -167,13 +146,21 @@ const pagination = computed(() =>
                     </option>
                 </select>
             </label>
+            <label class="field">
+                <span>归档结论</span>
+                <select v-model="filter.overdue">
+                    <option value="">全部结论</option>
+                    <option value="0">按时归档</option>
+                    <option value="1">超时归档</option>
+                </select>
+            </label>
             <button type="submit" class="btn-secondary self-end rounded-sm">
                 <Search :size="16" aria-hidden="true" />查询
             </button>
             <Link
                 v-if="canCreate"
                 :href="`/minutes/${meetingType.slug}/create`"
-                class="btn-primary self-end rounded-sm xl:ml-4"
+                class="btn-primary self-end rounded-sm lg:justify-self-end 2xl:ml-4"
             >
                 <Plus :size="16" aria-hidden="true" />新建纪要
             </Link>
@@ -185,16 +172,16 @@ const pagination = computed(() =>
         >
             <div v-if="rows.length" class="overflow-x-auto">
                 <table
-                    class="minute-table w-full min-w-[1000px] table-fixed text-left text-sm"
+                    class="minute-table w-full min-w-[900px] table-fixed text-left text-sm"
                 >
                     <colgroup>
-                        <col class="w-[25%]" />
-                        <col class="w-[17%]" />
-                        <col class="w-[13%]" />
-                        <col class="w-[11%]" />
-                        <col class="w-[12%]" />
-                        <col class="w-[13%]" />
+                        <col class="w-[24%]" />
+                        <col class="w-[16%]" />
+                        <col class="w-[14%]" />
                         <col class="w-[9%]" />
+                        <col class="w-[10%]" />
+                        <col class="w-[14%]" />
+                        <col class="w-[13%]" />
                     </colgroup>
                     <thead
                         class="bg-[#f1ede4] text-xs tracking-wide text-[#66716c]"
@@ -249,7 +236,10 @@ const pagination = computed(() =>
                                 >
                                     <MinuteStatus
                                         :status="minute.status"
-                                        :overdue="minute.is_overdue"
+                                        :overdue="
+                                            minute.status === 'archived' &&
+                                            minute.is_overdue
+                                        "
                                     />
                                 </div>
                             </td>

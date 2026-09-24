@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\WorkdayController;
 use App\Http\Controllers\Auth\CasController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MeetingMinuteController;
+use App\Http\Controllers\MinuteDeadlineController;
 use App\Http\Controllers\MinuteActionController;
 use App\Http\Controllers\ParticipantPresetController;
 use App\Http\Controllers\PersonSearchController;
@@ -26,6 +27,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/participant-presets', [ParticipantPresetController::class, 'store'])->name('participant-presets.store');
     Route::delete('/participant-presets/{participantPreset}', [ParticipantPresetController::class, 'destroy'])->name('participant-presets.destroy');
     Route::get('/minutes', [MeetingMinuteController::class, 'redirectToType'])->name('minutes.index');
+    Route::get('/minutes/deadline', MinuteDeadlineController::class)->name('minutes.deadline');
     Route::get('/minutes/{meetingType}', [MeetingMinuteController::class, 'index'])->whereIn('meetingType', ['party-branch', 'party-government-joint'])->name('minutes.type.index');
     Route::get('/minutes/{meetingType}/create', [MeetingMinuteController::class, 'create'])->whereIn('meetingType', ['party-branch', 'party-government-joint'])->name('minutes.create');
     Route::post('/minutes/{meetingType}', [MeetingMinuteController::class, 'store'])->whereIn('meetingType', ['party-branch', 'party-government-joint'])->name('minutes.store');

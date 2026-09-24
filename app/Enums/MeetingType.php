@@ -25,7 +25,7 @@ enum MeetingType: string
 
     public function scopeLabel(): string
     {
-        return $this === self::PartyBranch ? '党总支' : '学院';
+        return $this === self::PartyBranch ? '党总支' : '单位';
     }
 
     public static function fromSlug(string $slug): self

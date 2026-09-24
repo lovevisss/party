@@ -3,6 +3,7 @@ import { router, usePage } from '@inertiajs/vue3';
 import { Download, Printer, RotateCcw } from 'lucide-vue-next';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
 import MinuteStatus from '@/components/MinuteStatus.vue';
+import { minuteDateTime, minuteMeetingRange } from '@/lib/minuteDateTime';
 
 const props = defineProps<{
     minute: any;
@@ -45,7 +46,9 @@ const role: Record<string, string> = {
                 <div class="mt-4">
                     <MinuteStatus
                         :status="minute.status"
-                        :overdue="minute.is_overdue"
+                        :overdue="
+                            minute.status === 'archived' && minute.is_overdue
+                        "
                     />
                 </div>
             </header>
@@ -60,8 +63,12 @@ const role: Record<string, string> = {
                 <div class="detail">
                     <dt>会议时间</dt>
                     <dd>
-                        {{ minute.meeting_start_at?.slice(0, 16) }} —
-                        {{ minute.meeting_end_at?.slice(0, 16) }}
+                        {{
+                            minuteMeetingRange(
+                                minute.meeting_start_at,
+                                minute.meeting_end_at,
+                            )
+                        }}
                     </dd>
                 </div>
                 <div class="detail sm:col-span-2">
@@ -105,15 +112,31 @@ const role: Record<string, string> = {
             <section
                 class="mt-9 grid gap-5 border-t pt-6 text-sm sm:grid-cols-2"
             >
-                <div>归档时间：{{ minute.archived_at?.slice(0, 16) }}</div>
-                <div>截止时间：{{ minute.due_at?.slice(0, 16) }}</div>
+                <div>归档时间：{{ minuteDateTime(minute.archived_at) }}</div>
+                <div>截止时间：{{ minuteDateTime(minute.due_at, true) }}</div>
                 <div>当前版本：V{{ minute.current_version }}</div>
                 <div>
-                    归档结论：{{ minute.is_overdue ? '逾期归档' : '按时归档' }}
+                    归档结论：{{
+                        minute.status === 'archived'
+                            ? minute.is_overdue
+                                ? '超时归档'
+                                : '按时归档'
+                            : '待重新归档'
+                    }}
                 </div>
             </section>
             <section class="mt-8 print:hidden">
                 <h2 class="doc-title">版本与附件</h2>
+                <div
+                    v-for="version in minute.versions"
+                    :key="version.id"
+                    class="mt-2 border border-[#e2dbcf] bg-[#faf8f3] px-3 py-2 text-sm text-[#52625a]"
+                >
+                    V{{ version.version_no }} · 归档时间
+                    {{ minuteDateTime(version.archived_at) }} · 截止时间
+                    {{ minuteDateTime(version.due_at, true) }} ·
+                    {{ version.is_overdue ? '超时归档' : '按时归档' }}
+                </div>
                 <a
                     v-for="file in minute.files"
                     :key="file.id"

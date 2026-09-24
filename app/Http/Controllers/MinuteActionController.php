@@ -6,6 +6,7 @@ use App\Models\MeetingMinute;
 use App\Models\MinuteFile;
 use App\Services\MinuteFileService;
 use App\Services\MinutesArchiveService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -26,7 +27,11 @@ class MinuteActionController extends Controller
     public function archive(Request $request, MeetingMinute $minute, MinutesArchiveService $service): RedirectResponse
     {
         Gate::authorize('update', $minute);
-        $service->archive($minute, $request->user());
+        $data = $request->validate(
+            ['archived_at' => 'required|date_format:Y-m-d\TH:i'],
+            ['archived_at.required' => '请填写实际归档时间。', 'archived_at.date_format' => '归档时间格式无效。'],
+        );
+        $service->archive($minute, $request->user(), CarbonImmutable::parse($data['archived_at'], config('app.timezone')));
 
         return redirect()->route('minutes.show', $minute)->with('success', '纪要已正式归档。');
     }

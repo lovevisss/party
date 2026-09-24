@@ -37,7 +37,8 @@ class MeetingMinuteController extends Controller
         if (! $canViewAll) {
             $query->where('created_by', $user->id)->whereIn('meeting_scope_id', $user->meetingScopeIds($type));
         }
-        $query->when($request->filled('meeting_scope_id'), fn ($q) => $q->where('meeting_scope_id', $request->integer('meeting_scope_id')))->when($request->filled('year'), fn ($q) => $q->where('meeting_year', $request->integer('year')))->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))->when($request->filled('overdue'), fn ($q) => $q->where('is_overdue', $request->boolean('overdue')));
+        $request->validate(['overdue' => 'nullable|in:0,1']);
+        $query->when($request->filled('meeting_scope_id'), fn ($q) => $q->where('meeting_scope_id', $request->integer('meeting_scope_id')))->when($request->filled('year'), fn ($q) => $q->where('meeting_year', $request->integer('year')))->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))->when($request->filled('overdue'), fn ($q) => $q->where('status', MinuteStatus::Archived->value)->where('is_overdue', $request->boolean('overdue')));
         $size = in_array($request->integer('per_page'), [20, 50, 100]) ? $request->integer('per_page') : 20;
 
         $minutes = $query->latest('meeting_start_at')

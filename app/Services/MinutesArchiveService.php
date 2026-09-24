@@ -15,9 +15,9 @@ class MinutesArchiveService
 {
     public function __construct(private WorkdayService $workdays, private AuditService $audit) {}
 
-    public function archive(MeetingMinute $minute, User $user): MeetingMinute
+    public function archive(MeetingMinute $minute, User $user, CarbonImmutable $archivedAt): MeetingMinute
     {
-        return DB::transaction(function () use ($minute, $user): MeetingMinute {
+        return DB::transaction(function () use ($minute, $user, $archivedAt): MeetingMinute {
             $minute = MeetingMinute::lockForUpdate()->findOrFail($minute->id);
             if (! in_array($minute->getRawOriginal('status'), [MinuteStatus::Draft->value, MinuteStatus::Returned->value], true)) {
                 throw ValidationException::withMessages(['status' => '仅草稿或已退回的纪要可以归档。']);
@@ -66,9 +66,15 @@ class MinutesArchiveService
 
             $version = $minute->current_version + 1;
             $now = now();
-            $meetingEnd = CarbonImmutable::parse((string) $minute->meeting_end_at);
-            $due = $minute->due_at ?: $this->workdays->thirdWorkdayAfter($meetingEnd);
-            $overdue = $minute->is_overdue ?? $now->greaterThan($due);
+            $meetingEnd = CarbonImmutable::instance($minute->meeting_end_at);
+            if ($archivedAt->lessThan($meetingEnd)) {
+                throw ValidationException::withMessages(['archived_at' => '实际归档时间不能早于会议结束时间。']);
+            }
+            if ($archivedAt->greaterThan($now)) {
+                throw ValidationException::withMessages(['archived_at' => '实际归档时间不能晚于当前时间。']);
+            }
+            $due = $this->workdays->thirdWorkdayAfter($meetingEnd);
+            $overdue = $archivedAt->greaterThan($due);
             $snapshot = [
                 'minute' => $minute->only(['organization_id', 'meeting_scope_id', 'meeting_type', 'meeting_year', 'sequence_no', 'title', 'meeting_start_at', 'meeting_end_at', 'first_topic_content', 'remarks']),
                 'participants' => $minute->participants()->get()->map->only(['person_id', 'role_type', 'display_name', 'is_external'])->all(),
@@ -80,7 +86,7 @@ class MinutesArchiveService
                 'due_at' => $due,
                 'is_overdue' => $overdue,
                 'archived_by' => $user->id,
-                'archived_at' => $now,
+                'archived_at' => $archivedAt,
             ]);
             $file->update(['minute_version_id' => $versionModel->id, 'version_no' => $version]);
             $minute->update([
@@ -88,12 +94,12 @@ class MinutesArchiveService
                 'current_version' => $version,
                 'due_at' => $due,
                 'is_overdue' => $overdue,
-                'archived_at' => $minute->archived_at ?: $now,
+                'archived_at' => $archivedAt,
                 'resubmitted_at' => $version > 1 ? $now : null,
                 'lock_version' => $minute->lock_version + 1,
                 'updated_by' => $user->id,
             ]);
-            $this->audit->record($version > 1 ? 'minutes.resubmitted' : 'minutes.archived', $minute, ['version' => $version]);
+            $this->audit->record($version > 1 ? 'minutes.resubmitted' : 'minutes.archived', $minute, ['version' => $version, 'declared_archived_at' => $archivedAt->toIso8601String()]);
 
             return $minute->fresh(['participants', 'files', 'versions']);
         });

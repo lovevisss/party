@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     Archive,
@@ -14,6 +14,7 @@ import {
     X,
 } from 'lucide-vue-next';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
+import { minuteDateTime, minuteDateTimeInput } from '@/lib/minuteDateTime';
 
 const props = defineProps<{
     minute: any | null;
@@ -26,16 +27,14 @@ const props = defineProps<{
         scope_label: string;
     };
 }>();
-const formatDateTime = (value: string | null) =>
-    value ? value.slice(0, 16) : '';
 const form = useForm({
     meeting_scope_id:
         props.minute?.meeting_scope_id ?? props.organizations[0]?.id,
     meeting_year: props.minute?.meeting_year ?? new Date().getFullYear(),
     sequence_no: props.minute?.sequence_no ?? null,
     title: props.minute?.title ?? '',
-    meeting_start_at: formatDateTime(props.minute?.meeting_start_at),
-    meeting_end_at: formatDateTime(props.minute?.meeting_end_at),
+    meeting_start_at: minuteDateTimeInput(props.minute?.meeting_start_at),
+    meeting_end_at: minuteDateTimeInput(props.minute?.meeting_end_at),
     first_topic_content: props.minute?.first_topic_content ?? '',
     remarks: props.minute?.remarks ?? '',
     lock_version: props.minute?.lock_version ?? 0,
@@ -46,6 +45,38 @@ const attachmentForm = useForm<{ attachment: File | null }>({
 });
 const page = usePage<{ errors: Record<string, string> }>();
 const archiving = ref(false);
+const declaredArchivedAt = ref('');
+const archiveError = ref('');
+const deadline = ref<string | null>(null);
+const deadlineLoading = ref(false);
+const deadlineError = ref('');
+watch(
+    () => form.meeting_end_at,
+    async (meetingEnd, _previous, onCleanup) => {
+        deadline.value = null;
+        deadlineError.value = '';
+        deadlineLoading.value = false;
+        if (!meetingEnd) return;
+        const controller = new AbortController();
+        onCleanup(() => controller.abort());
+        deadlineLoading.value = true;
+        try {
+            const response = await fetch(
+                `/minutes/deadline?meeting_end_at=${encodeURIComponent(meetingEnd)}`,
+                { signal: controller.signal },
+            );
+            if (!response.ok) throw new Error('无法计算截止时间');
+            const payload: { due_at: string } = await response.json();
+            deadline.value = payload.due_at;
+        } catch {
+            if (!controller.signal.aborted)
+                deadlineError.value = '截止时间计算失败，请稍后重试。';
+        } finally {
+            if (!controller.signal.aborted) deadlineLoading.value = false;
+        }
+    },
+    { immediate: true },
+);
 const query = ref('');
 const results = ref<any[]>([]);
 const selectedPresetId = ref<number | ''>('');
@@ -79,6 +110,11 @@ const save = () =>
         ? form.put(`/minutes/${props.minute.id}`, { preserveScroll: true })
         : form.post(`/minutes/${props.meetingType.slug}`);
 const archive = () => {
+    archiveError.value = '';
+    if (!declaredArchivedAt.value) {
+        archiveError.value = '请填写实际归档时间。';
+        return;
+    }
     if (
         !props.minute ||
         archiving.value ||
@@ -89,11 +125,14 @@ const archive = () => {
     const submitArchive = () =>
         router.post(
             `/minutes/${props.minute.id}/archive`,
-            {},
+            { archived_at: declaredArchivedAt.value },
             {
                 preserveScroll: true,
                 onFinish: () => {
                     archiving.value = false;
+                },
+                onError: (errors) => {
+                    archiveError.value = errors.archived_at || '';
                 },
             },
         );
@@ -269,6 +308,26 @@ const upload = () => {
                             v-model="form.meeting_end_at"
                             type="datetime-local"
                     /></label>
+                    <div class="field md:col-span-3">
+                        <span>自动生成的截止时间</span>
+                        <div
+                            class="control flex items-center bg-[#f6f8f5] text-[#52625a]"
+                            aria-live="polite"
+                        >
+                            {{
+                                deadlineLoading
+                                    ? '正在计算…'
+                                    : deadlineError ||
+                                      (deadline
+                                          ? minuteDateTime(deadline, true)
+                                          : '填写会议结束时间后自动生成')
+                            }}
+                        </div>
+                        <span
+                            >自会议结束次日起算，第三个工作日 23:59:59
+                            截止；节假日及调休按工作日历计算。</span
+                        >
+                    </div>
                 </div>
             </section>
             <section class="form-card">
@@ -448,7 +507,12 @@ const upload = () => {
                 <div class="section-head">
                     <span>04</span>
                     <div>
-                        <h2>会议纪要 <span class="text-red-700" aria-label="必填">*</span></h2>
+                        <h2>
+                            会议纪要
+                            <span class="text-red-700" aria-label="必填"
+                                >*</span
+                            >
+                        </h2>
                         <p>请上传主要领导签字的PDF扫描件，最大 20 MB</p>
                     </div>
                 </div>
@@ -477,11 +541,17 @@ const upload = () => {
                         </button>
                     </div>
                     <p
-                        v-if="attachmentForm.errors.attachment || page.props.errors?.attachment"
+                        v-if="
+                            attachmentForm.errors.attachment ||
+                            page.props.errors?.attachment
+                        "
                         class="text-sm text-red-700"
                         role="alert"
                     >
-                        {{ attachmentForm.errors.attachment || page.props.errors?.attachment }}
+                        {{
+                            attachmentForm.errors.attachment ||
+                            page.props.errors?.attachment
+                        }}
                     </p>
                     <div
                         v-if="pendingFiles.length"
@@ -512,6 +582,34 @@ const upload = () => {
                 </div>
                 <p v-else class="text-sm text-[#7b8580]">
                     请先保存草稿，再上传主要领导签字的PDF会议纪要。
+                </p>
+            </section>
+            <section v-if="minute" class="form-card">
+                <div class="section-head">
+                    <span>05</span>
+                    <div>
+                        <h2>归档时间</h2>
+                        <p>
+                            由会议提交人填写实际归档时间，系统据此判断是否超时
+                        </p>
+                    </div>
+                </div>
+                <label class="field max-w-sm">
+                    <span
+                        >实际归档时间 <span class="text-red-700">*</span></span
+                    >
+                    <input
+                        v-model="declaredArchivedAt"
+                        type="datetime-local"
+                        @input="archiveError = ''"
+                    />
+                </label>
+                <p
+                    v-if="archiveError || page.props.errors?.archived_at"
+                    class="mt-2 text-sm text-red-700"
+                    role="alert"
+                >
+                    {{ archiveError || page.props.errors?.archived_at }}
                 </p>
             </section>
             <div

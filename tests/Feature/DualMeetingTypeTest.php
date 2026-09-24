@@ -25,9 +25,23 @@ test('all 26 source organizations map to the correct party branch and college sc
     app(MeetingScopeService::class)->syncOrganizationMappings();
 
     expect(MeetingScope::where('meeting_type', MeetingType::PartyBranch->value)->count())->toBe(10)
-        ->and(MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->count())->toBe(10)
+        ->and(MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->count())->toBe(11)
         ->and(MeetingScope::where('name', '机关党总支')->firstOrFail()->organizations()->count())->toBe(16)
         ->and(MeetingScope::where('name', '联合党总支')->firstOrFail()->organizations()->pluck('external_code')->sort()->values()->all())->toBe(['100309', '100310']);
+});
+
+test('an organ employee can receive joint meeting submitter access without changing college scopes', function () {
+    $organ = Organization::create(['external_code' => '100401', 'name' => '党委组织部', 'is_active' => true]);
+    $college = Organization::create(['external_code' => '100309', 'name' => '创业学院、继续教育学院', 'is_active' => true]);
+    app(MeetingScopeService::class)->syncOrganizationMappings();
+    $person = Person::create(['organization_id' => $organ->id, 'external_id' => 'O001', 'employee_no' => 'O001', 'name' => '机关人员', 'status' => 'active']);
+
+    $scope = app(MeetingScopeService::class)->scopeForPerson($person, MeetingType::PartyGovernmentJoint);
+    expect($scope?->name)->toBe('机关党总支')
+        ->and(MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->where('name', '创业学院、继续教育学院')->firstOrFail()->organizations()->pluck('external_code')->all())->toBe(['100309']);
+
+    $assignment = app(AuthorizationService::class)->grant($person, UserRole::MinuteSubmitter, MeetingType::PartyGovernmentJoint, null);
+    expect($assignment->meeting_scope_id)->toBe($scope->id);
 });
 
 test('the same person can hold independent submitter roles for both meeting types', function () {
