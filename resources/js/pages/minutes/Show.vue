@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router, usePage } from '@inertiajs/vue3';
-import { Download, Printer, RotateCcw } from 'lucide-vue-next';
+import { Download, Printer, RotateCcw, Trash2 } from 'lucide-vue-next';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
 import MinuteStatus from '@/components/MinuteStatus.vue';
 import { minuteDateTime, minuteMeetingRange } from '@/lib/minuteDateTime';
@@ -8,6 +8,7 @@ import { minuteDateTime, minuteMeetingRange } from '@/lib/minuteDateTime';
 const props = defineProps<{
     minute: any;
     meetingType: { value: string; label: string; scope_label: string };
+    canDelete: boolean;
 }>();
 const page = usePage<any>();
 const canReturn =
@@ -22,6 +23,15 @@ const sendBack = () => {
     if (reason) router.post(`/minutes/${props.minute.id}/return`, { reason });
 };
 const printPage = () => window.print();
+const remove = () => {
+    if (
+        !confirm(
+            `确认删除“${props.minute.title || '未命名草稿'}”吗？删除后将无法从页面访问。`,
+        )
+    )
+        return;
+    router.delete(`/minutes/${props.minute.id}`);
+};
 const role: Record<string, string> = {
     chair: '主持人',
     recorder: '记录人',
@@ -145,7 +155,9 @@ const role: Record<string, string> = {
             <button class="btn-secondary" @click="printPage">
                 <Printer :size="16" />打印</button
             ><button v-if="canReturn" class="btn-danger" @click="sendBack">
-                <RotateCcw :size="16" />退回修改
+                <RotateCcw :size="16" />退回修改</button
+            ><button v-if="canDelete" class="btn-danger" @click="remove">
+                <Trash2 :size="16" />删除纪要
             </button>
         </div>
     </BusinessLayout>

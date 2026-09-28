@@ -11,6 +11,7 @@ use App\Services\AuditService;
 use App\Services\MinuteFileService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -49,6 +50,7 @@ class MeetingMinuteController extends Controller
             ->through(fn (MeetingMinute $minute): array => [
                 ...$minute->toArray(),
                 'can_edit' => Gate::forUser($user)->allows('update', $minute),
+                'can_delete' => Gate::forUser($user)->allows('delete', $minute),
             ]);
         $scopes = MeetingScope::query()->where('meeting_type', $type->value)->where('is_active', true)
             ->when(! $canViewAll, fn ($scopeQuery) => $scopeQuery->whereIn('id', $user->meetingScopeIds($type)))
@@ -83,7 +85,7 @@ class MeetingMinuteController extends Controller
         $data = $this->draftData($request);
         $request->validate(['attachment' => 'nullable|file|max:20480']);
         $attachment = $request->file('attachment');
-        if ($attachment) {
+        if ($attachment instanceof UploadedFile) {
             $files->validateUpload($attachment);
         }
         $scope = $request->integer('meeting_scope_id') ?: $request->integer('organization_id');
@@ -93,7 +95,7 @@ class MeetingMinuteController extends Controller
         $minute = DB::transaction(function () use ($data, $scope, $sourceOrganization, $type, $request, $files, $attachment) {
             $minute = MeetingMinute::create([...$data, 'organization_id' => $sourceOrganization, 'meeting_scope_id' => $scope, 'meeting_type' => $type, 'status' => MinuteStatus::Draft, 'created_by' => $request->user()->id, 'updated_by' => $request->user()->id]);
             $this->replaceParticipants($minute, $request->input('participants', []));
-            if ($attachment) {
+            if ($attachment instanceof UploadedFile) {
                 $files->store($minute, $attachment, $request->user());
             }
 
@@ -101,14 +103,14 @@ class MeetingMinuteController extends Controller
         });
         $audit->record('minutes.created', $minute);
 
-        return redirect()->route('minutes.edit', $minute)->with('success', $attachment ? '会议纪要已上传，草稿已自动保存。' : '草稿已保存。');
+        return redirect()->route('minutes.edit', $minute)->with('success', $attachment instanceof UploadedFile ? '会议纪要已上传，草稿已自动保存。' : '草稿已保存。');
     }
 
     public function show(MeetingMinute $minute): Response
     {
         Gate::authorize('view', $minute);
 
-        return Inertia::render('minutes/Show', ['minute' => $minute->load(['participants', 'versions', 'files', 'returns', 'meetingScope']), 'meetingType' => $this->typePayload($minute->meeting_type)]);
+        return Inertia::render('minutes/Show', ['minute' => $minute->load(['participants', 'versions', 'files', 'returns', 'meetingScope']), 'meetingType' => $this->typePayload($minute->meeting_type), 'canDelete' => Gate::allows('delete', $minute)]);
     }
 
     public function edit(Request $request, MeetingMinute $minute): Response
@@ -138,6 +140,27 @@ class MeetingMinuteController extends Controller
         $audit->record('minutes.updated', $minute);
 
         return back()->with('success', '修改已保存。');
+    }
+
+    public function destroy(MeetingMinute $minute, AuditService $audit): RedirectResponse
+    {
+        Gate::authorize('delete', $minute);
+        $slug = $minute->meeting_type->slug();
+
+        DB::transaction(function () use ($minute, $audit): void {
+            $audit->record('minutes.deleted', $minute, [
+                'title' => $minute->title,
+                'meeting_type' => $minute->meeting_type->value,
+                'meeting_scope_id' => $minute->meeting_scope_id,
+                'meeting_year' => $minute->meeting_year,
+                'sequence_no' => $minute->sequence_no,
+                'current_version' => $minute->current_version,
+            ]);
+            $minute->forceFill(['active_number_key' => null])->save();
+            $minute->delete();
+        });
+
+        return redirect()->route('minutes.type.index', $slug)->with('success', '会议纪要已删除。');
     }
 
     /** @return array<string, mixed> */

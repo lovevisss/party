@@ -35,6 +35,11 @@ class MeetingMinutePolicy
             && in_array($minute->getRawOriginal('status'), ['draft', 'returned']);
     }
 
+    public function delete(User $user, MeetingMinute $minute): bool
+    {
+        return $user->isSystemAdmin();
+    }
+
     public function returnForCorrection(User $user, MeetingMinute $minute): bool
     {
         return $user->manages($minute->meeting_type) && $minute->getRawOriginal('status') === 'archived';

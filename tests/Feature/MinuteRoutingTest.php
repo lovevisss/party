@@ -24,6 +24,7 @@ test('minute routes match the same endpoints with and without production route c
     ['POST', '/minutes/party-branch', 'minutes.store'],
     ['POST', '/minutes/party-government-joint', 'minutes.store'],
     ['GET', '/minutes/01990000-0000-7000-8000-000000000001', 'minutes.show'],
+    ['DELETE', '/minutes/01990000-0000-7000-8000-000000000001', 'minutes.destroy'],
     ['GET', '/minutes/01990000-0000-7000-8000-000000000001/edit', 'minutes.edit'],
     ['PUT', '/minutes/01990000-0000-7000-8000-000000000001', 'minutes.update'],
 ]);

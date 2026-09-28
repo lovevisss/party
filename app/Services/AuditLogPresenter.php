@@ -31,6 +31,7 @@ class AuditLogPresenter
         'minutes.archived' => '归档会议纪要',
         'minutes.resubmitted' => '重新归档会议纪要',
         'minutes.returned' => '退回会议纪要',
+        'minutes.deleted' => '删除会议纪要',
         'personnel.sync_queued' => '发起人员同步',
         'workday.saved' => '保存工作日历',
         'workday.deleted' => '删除工作日历日期',
@@ -62,7 +63,7 @@ class AuditLogPresenter
             ->map(fn ($metadata) => is_array($metadata) ? ($metadata['person_id'] ?? null) : null)
             ->merge($userRows->pluck('person_id'))->filter()->unique()->all();
         $people = Person::whereIn('id', $personIds)->get(['id', 'name'])->keyBy('id')->all();
-        $minutes = MeetingMinute::whereIn('id', $subjectIds(MeetingMinute::class))->get(['id', 'title'])->keyBy('id')->all();
+        $minutes = MeetingMinute::withTrashed()->whereIn('id', $subjectIds(MeetingMinute::class))->get(['id', 'title'])->keyBy('id')->all();
         $presets = ParticipantPreset::whereIn('id', $subjectIds(ParticipantPreset::class))->get(['id', 'name'])->keyBy('id')->all();
         $scopes = MeetingScope::whereIn('id', $assignmentRows->pluck('meeting_scope_id')->filter()->unique())->get(['id', 'name'])->keyBy('id')->all();
         $workdays = Workday::whereIn('date', $subjectIds(Workday::class))->get(['date', 'name'])->keyBy('date')->all();
@@ -75,7 +76,7 @@ class AuditLogPresenter
             $subject = match ($log->subject_type) {
                 User::class => ['用户', $users[$id]->name ?? '用户已失效'],
                 RoleAssignment::class => $this->assignment($id, $metadata, $assignments, $users, $people, $scopes),
-                MeetingMinute::class => ['会议纪要', $minutes[$id]->title ?? '记录已删除'],
+                MeetingMinute::class => ['会议纪要', $minutes[$id]->title ?? ($metadata['title'] ?? '记录已删除')],
                 ParticipantPreset::class => ['常用人员清单', $presets[$id]->name ?? ($metadata['name'] ?? '记录已删除')],
                 ImportBatch::class => ['授权导入批次', isset($metadata['rows']) ? $metadata['rows'].' 条授权' : '批次记录'],
                 Workday::class => ['工作日历', $workdays[$id]->name ?? ($id ?: '记录已删除')],

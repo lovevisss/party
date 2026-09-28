@@ -8,6 +8,7 @@ import {
     Pencil,
     Plus,
     Search,
+    Trash2,
 } from 'lucide-vue-next';
 import { computed, reactive, watch } from 'vue';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
@@ -34,6 +35,7 @@ type Minute = {
     status: string;
     is_overdue: boolean;
     can_edit: boolean;
+    can_delete: boolean;
 };
 const props = defineProps<{
     minutes: { data: Minute[]; links: PageLink[]; total: number };
@@ -74,6 +76,15 @@ const apply = () =>
             replace: true,
         },
     );
+const remove = (minute: Minute) => {
+    if (
+        !confirm(
+            `确认删除“${minute.title || '未命名草稿'}”吗？删除后将无法从页面访问。`,
+        )
+    )
+        return;
+    router.delete(`/minutes/${minute.id}`, { preserveScroll: true });
+};
 
 const rows = computed(() =>
     props.minutes.data.map((minute) => ({
@@ -175,13 +186,13 @@ const pagination = computed(() =>
                     class="minute-table w-full min-w-[900px] table-fixed text-left text-sm"
                 >
                     <colgroup>
-                        <col class="w-[24%]" />
+                        <col class="w-[21%]" />
                         <col class="w-[16%]" />
                         <col class="w-[14%]" />
                         <col class="w-[9%]" />
                         <col class="w-[10%]" />
                         <col class="w-[14%]" />
-                        <col class="w-[13%]" />
+                        <col class="w-[16%]" />
                     </colgroup>
                     <thead
                         class="bg-[#f1ede4] text-xs tracking-wide text-[#66716c]"
@@ -252,21 +263,35 @@ const pagination = computed(() =>
                                 ><span v-else class="text-[#87908b]">—</span>
                             </td>
                             <td>
-                                <Link
-                                    :href="
-                                        minute.can_edit
-                                            ? `/minutes/${minute.id}/edit`
-                                            : `/minutes/${minute.id}`
-                                    "
-                                    class="inline-flex min-h-9 items-center gap-1.5 rounded-sm px-2 font-medium whitespace-nowrap text-[#2f6a59] transition hover:bg-[#edf4ef] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6a59]"
-                                    ><component
-                                        :is="minute.can_edit ? Pencil : Eye"
-                                        :size="15"
-                                        aria-hidden="true"
-                                    />{{
-                                        minute.can_edit ? '编辑' : '查看'
-                                    }}</Link
-                                >
+                                <div class="flex flex-wrap items-center gap-1">
+                                    <Link
+                                        :href="
+                                            minute.can_edit
+                                                ? `/minutes/${minute.id}/edit`
+                                                : `/minutes/${minute.id}`
+                                        "
+                                        class="inline-flex min-h-9 items-center gap-1.5 rounded-sm px-2 font-medium whitespace-nowrap text-[#2f6a59] transition hover:bg-[#edf4ef] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6a59]"
+                                        ><component
+                                            :is="minute.can_edit ? Pencil : Eye"
+                                            :size="15"
+                                            aria-hidden="true"
+                                        />{{
+                                            minute.can_edit ? '编辑' : '查看'
+                                        }}</Link
+                                    >
+                                    <button
+                                        v-if="minute.can_delete"
+                                        type="button"
+                                        class="inline-flex min-h-9 items-center gap-1.5 rounded-sm px-2 font-medium whitespace-nowrap text-[#9f3f36] transition hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9f3f36]"
+                                        :aria-label="`删除纪要：${minute.title || '未命名草稿'}`"
+                                        @click="remove(minute)"
+                                    >
+                                        <Trash2
+                                            :size="15"
+                                            aria-hidden="true"
+                                        />删除
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>

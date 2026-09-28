@@ -2,6 +2,7 @@
 
 use App\Enums\MeetingType;
 use App\Enums\MinuteStatus;
+use App\Models\AuditLog;
 use App\Models\MeetingMinute;
 use App\Models\MeetingScope;
 use App\Models\MinuteFile;
@@ -397,6 +398,60 @@ test('uploaded attachment is visible while archive validation errors are returne
     $this->actingAs($user)->post("/minutes/{$minute->id}/archive")
         ->assertSessionHasErrors('participants');
     expect($minute->fresh()->status)->toBe(MinuteStatus::Draft);
+});
+
+test('only a system administrator can delete an existing minute while preserving its history', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'DELETE-MINUTE', 'name' => '删除测试单位']);
+    $submitter = coreUser('minute_submitter', $organization);
+    $manager = coreUser('minute_manager');
+    $admin = coreUser('system_admin');
+    $minute = readyMinute($submitter, $organization, 31);
+    Storage::disk(config('filesystems.default'))->put($minute->files()->firstOrFail()->object_key, 'signed PDF');
+    app(MinutesArchiveService::class)->archive($minute, $submitter, CarbonImmutable::parse('2026-09-07 12:00:00', 'Asia/Shanghai'));
+    $file = $minute->files()->firstOrFail();
+
+    $this->actingAs($submitter)->delete("/minutes/{$minute->id}")->assertForbidden();
+    $this->actingAs($manager)->delete("/minutes/{$minute->id}")->assertForbidden();
+    $this->actingAs($manager)->get("/minutes/{$minute->id}")->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('canDelete', false)->etc());
+    $this->actingAs($admin)->get('/minutes/party-branch')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('minutes.data.0.can_delete', true)->etc());
+    $this->actingAs($admin)->get("/minutes/{$minute->id}")->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('canDelete', true)->etc());
+    $this->actingAs($admin)->delete("/minutes/{$minute->id}")->assertRedirect('/minutes/party-branch');
+
+    expect(MeetingMinute::whereKey($minute->id)->exists())->toBeFalse()
+        ->and(MeetingMinute::withTrashed()->whereKey($minute->id)->firstOrFail()->active_number_key)->toBeNull()
+        ->and($minute->versions()->count())->toBe(1)
+        ->and($minute->files()->count())->toBe(1)
+        ->and(AuditLog::where('event', 'minutes.deleted')->where('subject_id', $minute->id)->firstOrFail()->metadata['title'])->toBe($minute->title);
+    Storage::disk(config('filesystems.default'))->assertExists($file->object_key);
+    $this->actingAs($admin)->get("/minutes/{$minute->id}")->assertNotFound();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$file->id}")->assertNotFound();
+    $this->actingAs($admin)->get('/minutes/party-branch')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minutes.data', 0));
+
+    $replacement = readyMinute($submitter, $organization, 31);
+    expect($replacement->id)->not->toBe($minute->id);
+});
+
+test('system administrator can delete a draft from the joint meeting list', function () {
+    $organization = Organization::create(['external_code' => 'DELETE-JOINT', 'name' => '联席删除测试单位']);
+    $admin = coreUser('system_admin');
+    $minute = MeetingMinute::create([
+        'organization_id' => $organization->id,
+        'meeting_type' => MeetingType::PartyGovernmentJoint,
+        'status' => MinuteStatus::Draft,
+        'title' => '待删除草稿',
+        'created_by' => $admin->id,
+        'updated_by' => $admin->id,
+    ]);
+
+    $this->actingAs($admin)->delete("/minutes/{$minute->id}")
+        ->assertRedirect('/minutes/party-government-joint');
+    expect(MeetingMinute::whereKey($minute->id)->exists())->toBeFalse()
+        ->and(MeetingMinute::withTrashed()->whereKey($minute->id)->exists())->toBeTrue();
 });
 
 test('saving participant changes before archive makes the new roles available to archive', function () {

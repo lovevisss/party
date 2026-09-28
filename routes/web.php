@@ -34,6 +34,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/minutes/{minute}/edit', [MeetingMinuteController::class, 'edit'])->whereUuid('minute')->name('minutes.edit');
     Route::put('/minutes/{minute}', [MeetingMinuteController::class, 'update'])->whereUuid('minute')->name('minutes.update');
     Route::get('/minutes/{minute}', [MeetingMinuteController::class, 'show'])->whereUuid('minute')->name('minutes.show');
+    Route::delete('/minutes/{minute}', [MeetingMinuteController::class, 'destroy'])->whereUuid('minute')->name('minutes.destroy');
     Route::post('/minutes/{minute}/attachment', [MinuteActionController::class, 'upload'])->whereUuid('minute')->name('minutes.attachment');
     Route::post('/minutes/{minute}/archive', [MinuteActionController::class, 'archive'])->whereUuid('minute')->name('minutes.archive');
     Route::post('/minutes/{minute}/return', [MinuteActionController::class, 'returnForCorrection'])->whereUuid('minute')->name('minutes.return');
