@@ -1,6 +1,6 @@
 import { createInertiaApp } from '@inertiajs/vue3';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = '会议纪要管理系统';
 
 void createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),

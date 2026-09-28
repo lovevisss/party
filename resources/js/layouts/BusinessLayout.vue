@@ -51,7 +51,7 @@ const links = computed(() => [
 </script>
 
 <template>
-    <Head :title="`${props.title} - 会议纪要管理系统`" />
+    <Head :title="props.title" />
     <div class="min-h-screen bg-[#f4f1ea] text-[#18231f]">
         <aside
             class="fixed inset-y-0 left-0 z-20 hidden w-64 overflow-hidden bg-[#173b32] text-white lg:block print:hidden"
