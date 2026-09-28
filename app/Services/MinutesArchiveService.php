@@ -15,7 +15,7 @@ class MinutesArchiveService
 {
     public function __construct(private WorkdayService $workdays, private AuditService $audit) {}
 
-    public function archive(MeetingMinute $minute, User $user, CarbonImmutable $archivedAt): MeetingMinute
+    public function archive(MeetingMinute $minute, User $user, ?CarbonImmutable $archivedAt = null): MeetingMinute
     {
         return DB::transaction(function () use ($minute, $user, $archivedAt): MeetingMinute {
             $minute = MeetingMinute::lockForUpdate()->findOrFail($minute->id);
@@ -65,8 +65,9 @@ class MinutesArchiveService
             }
 
             $version = $minute->current_version + 1;
-            $now = now();
-            $meetingEnd = CarbonImmutable::instance($minute->meeting_end_at);
+            $now = CarbonImmutable::now(config('app.timezone'));
+            $archivedAt ??= $now;
+            $meetingEnd = CarbonImmutable::parse($minute->meeting_end_at, config('app.timezone'));
             if ($archivedAt->lessThan($meetingEnd)) {
                 throw ValidationException::withMessages(['archived_at' => '实际归档时间不能早于会议结束时间。']);
             }
@@ -99,7 +100,7 @@ class MinutesArchiveService
                 'lock_version' => $minute->lock_version + 1,
                 'updated_by' => $user->id,
             ]);
-            $this->audit->record($version > 1 ? 'minutes.resubmitted' : 'minutes.archived', $minute, ['version' => $version, 'declared_archived_at' => $archivedAt->toIso8601String()]);
+            $this->audit->record($version > 1 ? 'minutes.resubmitted' : 'minutes.archived', $minute, ['version' => $version, 'archived_at' => $archivedAt->toIso8601String()]);
 
             return $minute->fresh(['participants', 'files', 'versions']);
         });

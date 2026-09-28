@@ -45,7 +45,7 @@ const attachmentForm = useForm<{ attachment: File | null }>({
 const page = usePage<{ errors: Record<string, string> }>();
 const archiving = ref(false);
 const uploading = ref(false);
-const declaredArchivedAt = ref('');
+const attachmentInput = ref<HTMLInputElement | null>(null);
 const archiveError = ref('');
 const participantError = ref('');
 const deadline = ref<string | null>(null);
@@ -132,10 +132,6 @@ const archive = () => {
         participantError.value = `请至少选择一名${roles[missingRequiredRole.value]}。`;
         return;
     }
-    if (!declaredArchivedAt.value) {
-        archiveError.value = '请填写实际归档时间。';
-        return;
-    }
     if (
         !props.minute ||
         archiving.value ||
@@ -146,7 +142,7 @@ const archive = () => {
     const submitArchive = () =>
         router.post(
             `/minutes/${props.minute.id}/archive`,
-            { archived_at: declaredArchivedAt.value },
+            {},
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -259,9 +255,12 @@ const deletePreset = () => {
     });
 };
 const chooseAttachment = (event: Event) => {
-    attachmentForm.attachment =
-        (event.target as HTMLInputElement).files?.[0] ?? null;
+    const input = event.target as HTMLInputElement;
+    attachmentForm.attachment = input.files?.[0] ?? null;
+    input.value = '';
+    if (attachmentForm.attachment) upload();
 };
+const openAttachmentPicker = () => attachmentInput.value?.click();
 const upload = () => {
     if (
         !attachmentForm.attachment ||
@@ -576,7 +575,10 @@ const upload = () => {
                                 >*</span
                             >
                         </h2>
-                        <p>请上传主要领导签字的PDF扫描件，最大 20 MB</p>
+                        <p>
+                            点击“上传会议纪要”选择主要领导签字的PDF扫描件，选定后自动上传，最大
+                            20 MB
+                        </p>
                     </div>
                 </div>
                 <div class="space-y-4">
@@ -584,18 +586,17 @@ const upload = () => {
                         class="flex flex-col gap-3 border border-dashed border-[#baa874] bg-[#faf8f1] p-5 sm:flex-row sm:items-center"
                     >
                         <FileUp class="text-[#8b6f35]" /><input
+                            ref="attachmentInput"
                             type="file"
                             accept=".pdf,application/pdf"
+                            class="sr-only"
+                            aria-label="选择签字的PDF会议纪要"
                             @change="chooseAttachment"
                         /><button
                             type="button"
                             class="btn-secondary sm:ml-auto"
-                            :disabled="
-                                !attachmentForm.attachment ||
-                                attachmentForm.processing ||
-                                uploading
-                            "
-                            @click="upload"
+                            :disabled="attachmentForm.processing || uploading"
+                            @click="openAttachmentPicker"
                         >
                             {{
                                 attachmentForm.processing || uploading
@@ -653,21 +654,12 @@ const upload = () => {
                     <span>05</span>
                     <div>
                         <h2>归档时间</h2>
-                        <p>
-                            由会议提交人填写实际归档时间，系统据此判断是否超时
-                        </p>
+                        <p>正式归档时由系统自动记录，无需手动填写</p>
                     </div>
                 </div>
-                <label class="field max-w-sm">
-                    <span
-                        >实际归档时间 <span class="text-red-700">*</span></span
-                    >
-                    <input
-                        v-model="declaredArchivedAt"
-                        type="datetime-local"
-                        @input="archiveError = ''"
-                    />
-                </label>
+                <p class="text-sm text-[#52625a]">
+                    点击“保存并提交归档”后，以服务器记录的北京时间作为归档时间，并据此判断是否超时。
+                </p>
                 <p
                     v-if="archiveError || page.props.errors?.archived_at"
                     class="mt-2 text-sm text-red-700"

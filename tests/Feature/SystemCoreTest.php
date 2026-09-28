@@ -130,24 +130,24 @@ test('archive compares the submitted time with the inclusive deadline and filter
         ->assertOk()->assertInertia(fn (Assert $page) => $page->has('minutes.data', 1)->where('minutes.data.0.id', $late->id));
 });
 
-test('archive requires a valid submitted time and resubmission updates only the current version', function () {
+test('archive uses server time and resubmission updates only the current version', function () {
     $organization = Organization::create(['external_code' => 'RESUBMIT-TIME', 'name' => '再次归档测试单位']);
     $user = coreUser('minute_submitter', $organization);
     $minute = readyMinute($user, $organization, 1);
     $url = "/minutes/{$minute->id}/archive";
 
+    $this->travelTo(CarbonImmutable::parse('2026-09-02 09:59:00', 'Asia/Shanghai'));
     $this->actingAs($user)->post($url)->assertSessionHasErrors('archived_at');
-    $this->actingAs($user)->post($url, ['archived_at' => 'invalid'])->assertSessionHasErrors('archived_at');
-    $this->actingAs($user)->post($url, ['archived_at' => '2026-09-02T09:59'])->assertSessionHasErrors('archived_at');
-    $this->actingAs($user)->post($url, ['archived_at' => now()->addDay()->format('Y-m-d\TH:i')])->assertSessionHasErrors('archived_at');
     expect($minute->fresh()->status)->toBe(MinuteStatus::Draft);
 
-    $this->actingAs($user)->post($url, ['archived_at' => '2026-09-07T12:00'])->assertRedirect("/minutes/{$minute->id}");
+    $this->travelTo(CarbonImmutable::parse('2026-09-07 12:00:00', 'Asia/Shanghai'));
+    $this->actingAs($user)->post($url, ['archived_at' => '2026-09-08T12:00'])->assertRedirect("/minutes/{$minute->id}");
     app(MinutesArchiveService::class)->returnForCorrection($minute, $user, '需要修改后重新归档');
     $minute->update(['meeting_end_at' => '2026-09-03 10:00:00']);
     MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'revised.pdf', 'object_key' => "minutes/{$minute->id}/revised.pdf", 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('a', 64), 'uploaded_by' => $user->id]);
 
-    $this->actingAs($user)->post($url, ['archived_at' => '2026-09-09T12:00'])->assertRedirect("/minutes/{$minute->id}");
+    $this->travelTo(CarbonImmutable::parse('2026-09-09 12:00:00', 'Asia/Shanghai'));
+    $this->actingAs($user)->post($url)->assertRedirect("/minutes/{$minute->id}");
     $versions = $minute->fresh()->versions()->orderBy('version_no')->get();
     expect($versions)->toHaveCount(2)
         ->and($versions[0]->archived_at->format('Y-m-d H:i'))->toBe('2026-09-07 12:00')
@@ -295,7 +295,7 @@ test('only a PDF meeting minute can be uploaded and used for archive', function 
         'sha256' => str_repeat('a', 64),
         'uploaded_by' => $user->id,
     ]);
-    $this->actingAs($user)->post("/minutes/{$minute->id}/archive", ['archived_at' => '2026-09-07T10:00'])
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")
         ->assertSessionHasErrors(['attachment' => '归档前必须上传主要领导签字的PDF会议纪要。']);
     expect($minute->fresh()->status)->toBe(MinuteStatus::Draft);
 
@@ -306,7 +306,7 @@ test('only a PDF meeting minute can be uploaded and used for archive', function 
     $this->actingAs($user)->post("/minutes/{$minute->id}/attachment", [
         'attachment' => UploadedFile::fake()->createWithContent('signed.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
     ])->assertSessionHasNoErrors();
-    $this->actingAs($user)->post("/minutes/{$minute->id}/archive", ['archived_at' => '2026-09-07T10:00'])
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")
         ->assertRedirect("/minutes/{$minute->id}");
 
     expect($minute->fresh()->status)->toBe(MinuteStatus::Archived)
@@ -352,13 +352,13 @@ test('only chair recorder and attendee are required among participant roles', fu
     foreach (['chair', 'recorder', 'attendee'] as $index => $role) {
         $incomplete = readyMinute($user, $organization, 17 + $index);
         $incomplete->participants()->where('role_type', $role)->delete();
-        $this->actingAs($user)->post("/minutes/{$incomplete->id}/archive", ['archived_at' => '2026-09-07T10:00'])
+        $this->actingAs($user)->post("/minutes/{$incomplete->id}/archive")
             ->assertSessionHasErrors('participants');
         expect($incomplete->fresh()->status)->toBe(MinuteStatus::Draft);
     }
 
     $minute = readyMinute($user, $organization, 20);
-    $this->actingAs($user)->post("/minutes/{$minute->id}/archive", ['archived_at' => '2026-09-07T10:00'])
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")
         ->assertRedirect("/minutes/{$minute->id}");
     expect($minute->fresh()->status)->toBe(MinuteStatus::Archived);
 });
@@ -394,7 +394,7 @@ test('uploaded attachment is visible while archive validation errors are returne
         ->component('minutes/Form')
         ->has('minute.files', 1)
         ->where('minute.files.0.original_name', '正式纪要.pdf'));
-    $this->actingAs($user)->post("/minutes/{$minute->id}/archive", ['archived_at' => '2026-09-07T10:00'])
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")
         ->assertSessionHasErrors('participants');
     expect($minute->fresh()->status)->toBe(MinuteStatus::Draft);
 });
@@ -436,7 +436,7 @@ test('saving participant changes before archive makes the new roles available to
         'lock_version' => 0,
         'participants' => $participants,
     ])->assertSessionHasNoErrors();
-    $this->actingAs($user)->post("/minutes/{$minute->id}/archive", ['archived_at' => '2026-09-07T10:00'])->assertRedirect("/minutes/{$minute->id}");
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")->assertRedirect("/minutes/{$minute->id}");
 
     expect($minute->fresh()->status)->toBe(MinuteStatus::Archived)
         ->and($minute->participants()->pluck('role_type')->all())->toContain('chair', 'recorder', 'attendee');
