@@ -1,6 +1,6 @@
 import { createInertiaApp } from '@inertiajs/vue3';
 
-const appName = '会议纪要管理系统';
+const appName = '二级议事会议纪要';
 
 void createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),

@@ -37,7 +37,7 @@
         @fonts
 
         @vite(['resources/css/app.css', 'resources/js/app.ts', "resources/js/pages/{$page['component']}.vue"])
-        <title>会议纪要管理系统</title>
+        <title>二级议事会议纪要</title>
         @inertiaHead
     </head>
     <body class="font-sans antialiased">

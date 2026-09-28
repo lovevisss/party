@@ -79,7 +79,7 @@ const links = computed(() => [
                         <p
                             class="font-serif text-lg font-semibold tracking-wide"
                         >
-                            会议纪要管理系统
+                            二级议事会议纪要
                         </p>
                         <p class="text-xs text-white/55">
                             规范 · 留痕 · 可追溯
@@ -174,7 +174,7 @@ const links = computed(() => [
                         <p
                             class="mb-1 text-[11px] font-semibold tracking-[.24em] text-[#8b6f35] uppercase"
                         >
-                            {{ eyebrow || '会议纪要管理系统' }}
+                            {{ eyebrow || '二级议事会议纪要' }}
                         </p>
                         <h1
                             class="font-serif text-2xl font-semibold tracking-tight"
