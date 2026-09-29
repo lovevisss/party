@@ -25,21 +25,36 @@ class AuthorizationImportController extends Controller
 {
     public function index(Request $request): Response
     {
+        $filters = $request->only(['q', 'role', 'meeting_type', 'meeting_scope_id']);
+        $type = MeetingType::tryFrom($request->string('meeting_type')->toString());
+        if (! $type) {
+            unset($filters['meeting_type'], $filters['meeting_scope_id']);
+        } else {
+            $filters['meeting_type'] = $type->value;
+            $scopeId = $request->integer('meeting_scope_id');
+            if ($scopeId && MeetingScope::query()->whereKey($scopeId)
+                ->where('meeting_type', $type->value)->where('is_active', true)->exists()) {
+                $filters['meeting_scope_id'] = (string) $scopeId;
+            } else {
+                unset($filters['meeting_scope_id']);
+            }
+        }
+
         $query = RoleAssignment::with(['user.person.organization', 'meetingScope'])->latest();
-        $query->when($request->filled('q'), function ($builder) use ($request): void {
-            $term = $request->string('q')->toString();
+        $query->when(filled($filters['q'] ?? null), function ($builder) use ($filters): void {
+            $term = (string) $filters['q'];
             $builder->whereHas('user.person', fn ($person) => $person->where('name', 'like', "%$term%")->orWhere('employee_no', 'like', "%$term%"));
         });
-        $query->when($request->filled('role'), fn ($builder) => $builder->where('role', $request->string('role')->toString()));
-        $query->when($request->filled('meeting_type'), fn ($builder) => $builder->where('meeting_type', $request->string('meeting_type')->toString()));
-        $query->when($request->filled('meeting_scope_id'), fn ($builder) => $builder->where('meeting_scope_id', $request->integer('meeting_scope_id')));
+        $query->when(filled($filters['role'] ?? null), fn ($builder) => $builder->where('role', $filters['role']));
+        $query->when(isset($filters['meeting_type']), fn ($builder) => $builder->where('meeting_type', $filters['meeting_type']));
+        $query->when(filled($filters['meeting_scope_id'] ?? null), fn ($builder) => $builder->where('meeting_scope_id', (int) $filters['meeting_scope_id']));
 
         return Inertia::render('admin/AuthorizationImport', [
-            'assignments' => $query->paginate(20)->withQueryString(),
+            'assignments' => $query->paginate(20)->appends($filters),
             'batches' => ImportBatch::where('type', 'authorization')->latest()->limit(10)->get(),
             'organizations' => MeetingScope::with('organizations:id')->where('is_active', true)->orderBy('meeting_type')->orderBy('display_order')->get(['id', 'meeting_type', 'name']),
             'meetingTypes' => collect(MeetingType::cases())->map(fn (MeetingType $type) => ['value' => $type->value, 'label' => $type->label()]),
-            'filters' => $request->only(['q', 'role', 'meeting_type', 'meeting_scope_id']),
+            'filters' => $filters,
         ]);
     }
 

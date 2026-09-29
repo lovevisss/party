@@ -30,8 +30,15 @@ const filters = ref({
     q: props.filters.q ?? '',
     role: props.filters.role ?? '',
     meeting_type: props.filters.meeting_type ?? '',
-    meeting_scope_id: props.filters.meeting_scope_id ?? '',
+    meeting_scope_id: props.filters.meeting_scope_id
+        ? String(props.filters.meeting_scope_id)
+        : '',
 });
+const filteredScopes = computed(() =>
+    props.organizations.filter(
+        (scope) => scope.meeting_type === filters.value.meeting_type,
+    ),
+);
 const roleLabels: Record<string, string> = {
     minute_submitter: '会议提交人',
     minute_manager: '会议管理员',
@@ -326,7 +333,10 @@ const selectedScope = computed(() => {
                     </select></label
                 ><label class="field"
                     ><span>会议类型</span
-                    ><select v-model="filters.meeting_type">
+                    ><select
+                        v-model="filters.meeting_type"
+                        @change="filters.meeting_scope_id = ''"
+                    >
                         <option value="">全部类型</option>
                         <option
                             v-for="type in meetingTypes"
@@ -338,12 +348,21 @@ const selectedScope = computed(() => {
                     </select></label
                 ><label class="field"
                     ><span>会议范围</span
-                    ><select v-model="filters.meeting_scope_id">
-                        <option value="">全部范围</option>
+                    ><select
+                        v-model="filters.meeting_scope_id"
+                        :disabled="!filters.meeting_type"
+                    >
+                        <option value="">
+                            {{
+                                filters.meeting_type
+                                    ? '全部范围'
+                                    : '请先选择会议类型'
+                            }}
+                        </option>
                         <option
-                            v-for="scope in organizations"
+                            v-for="scope in filteredScopes"
                             :key="scope.id"
-                            :value="scope.id"
+                            :value="String(scope.id)"
                         >
                             {{ scope.name }}
                         </option>
