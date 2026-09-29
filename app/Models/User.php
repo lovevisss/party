@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @property int $id
@@ -72,9 +73,27 @@ class User extends Authenticatable
         return $this->hasRole(UserRole::SystemAdmin->value);
     }
 
-    public function manages(MeetingType $type): bool
+    public function manages(MeetingType $type, ?int $scopeId): bool
     {
-        return $this->isSystemAdmin() || $this->hasRole(UserRole::MinuteManager->value, $type);
+        return $this->isSystemAdmin() || ($scopeId !== null && in_array($scopeId, $this->managedScopeIds($type), true));
+    }
+
+    /** @return list<int> */
+    public function managedScopeIds(MeetingType $type): array
+    {
+        $person = $this->person()->first();
+        if (! $person || $person->status !== 'active') {
+            return [];
+        }
+
+        return array_values(DB::table('role_assignments as assignments')
+            ->join('meeting_scopes as scopes', 'scopes.id', '=', 'assignments.meeting_scope_id')
+            ->join('meeting_scope_organizations as memberships', 'memberships.meeting_scope_id', '=', 'scopes.id')
+            ->where('assignments.user_id', $this->id)->whereNull('assignments.deleted_at')
+            ->where('assignments.role', UserRole::MinuteManager->value)
+            ->where('assignments.meeting_type', $type->value)->where('scopes.meeting_type', $type->value)
+            ->where('scopes.is_active', true)->where('memberships.organization_id', $person->organization_id)
+            ->pluck('assignments.meeting_scope_id')->map(fn ($id): int => (int) $id)->unique()->all());
     }
 
     /** @return list<int> */
@@ -92,7 +111,6 @@ class User extends Authenticatable
             return MeetingType::cases();
         }
 
-        return array_values($this->roleAssignments()->whereNotNull('meeting_type')->pluck('meeting_type')->unique()
-            ->map(fn (string|MeetingType $type): MeetingType => $type instanceof MeetingType ? $type : MeetingType::from($type))->values()->all());
+        return array_values(array_filter(MeetingType::cases(), fn (MeetingType $type): bool => $this->managedScopeIds($type) !== [] || $this->meetingScopeIds($type) !== []));
     }
 }

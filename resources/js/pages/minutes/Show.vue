@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router, usePage } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 import { Download, Printer, RotateCcw, Trash2 } from 'lucide-vue-next';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
 import MinuteStatus from '@/components/MinuteStatus.vue';
@@ -9,15 +9,8 @@ const props = defineProps<{
     minute: any;
     meetingType: { value: string; label: string; scope_label: string };
     canDelete: boolean;
+    canReturn: boolean;
 }>();
-const page = usePage<any>();
-const canReturn =
-    page.props.auth.roles.some(
-        (item: any) =>
-            item.role === 'system_admin' ||
-            (item.role === 'minute_manager' &&
-                item.meeting_type === props.meetingType.value),
-    ) && props.minute.status === 'archived';
 const sendBack = () => {
     const reason = prompt('请输入退回原因（5～500字）');
     if (reason) router.post(`/minutes/${props.minute.id}/return`, { reason });
@@ -154,7 +147,11 @@ const role: Record<string, string> = {
         <div class="mx-auto mt-4 flex max-w-5xl justify-end gap-3 print:hidden">
             <button class="btn-secondary" @click="printPage">
                 <Printer :size="16" />打印</button
-            ><button v-if="canReturn" class="btn-danger" @click="sendBack">
+            ><button
+                v-if="props.canReturn"
+                class="btn-danger"
+                @click="sendBack"
+            >
                 <RotateCcw :size="16" />退回修改</button
             ><button v-if="canDelete" class="btn-danger" @click="remove">
                 <Trash2 :size="16" />删除纪要

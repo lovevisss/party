@@ -29,7 +29,14 @@ function coreUser(string $role, ?Organization $organization = null): User
 {
     $user = User::factory()->create(['cas_account' => fake()->unique()->userName(), 'is_active' => true]);
     $scope = null;
-    if ($organization && $role === 'minute_submitter') {
+    if ($organization && in_array($role, ['minute_submitter', 'minute_manager'], true)) {
+        $scope = MeetingScope::where('meeting_type', 'party_branch')->firstOrFail();
+        $scope->organizations()->syncWithoutDetaching([$organization->id]);
+    }
+    if ($role === 'minute_manager' && ! $organization) {
+        $organization = Organization::create(['external_code' => 'MANAGER-'.$user->id, 'name' => '管理员测试单位']);
+        $person = Person::create(['organization_id' => $organization->id, 'external_id' => 'M'.$user->id, 'employee_no' => 'M'.$user->id, 'name' => '测试管理员', 'status' => 'active']);
+        $user->update(['person_id' => $person->id]);
         $scope = MeetingScope::where('meeting_type', 'party_branch')->firstOrFail();
         $scope->organizations()->syncWithoutDetaching([$organization->id]);
     }
@@ -38,7 +45,7 @@ function coreUser(string $role, ?Organization $organization = null): User
         'role' => $role,
         'meeting_type' => $role === 'system_admin' ? null : 'party_branch',
         'meeting_scope_id' => $scope?->id,
-        'scope_key' => $role === 'system_admin' ? 'global' : ($role === 'minute_manager' ? 'meeting:party_branch:global' : 'meeting:party_branch:scope:'.$scope?->id),
+        'scope_key' => $role === 'system_admin' ? 'global' : 'meeting:party_branch:scope:'.$scope?->id,
     ]);
 
     return $user->fresh('roleAssignments');

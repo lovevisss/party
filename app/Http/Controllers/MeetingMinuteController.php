@@ -35,9 +35,14 @@ class MeetingMinuteController extends Controller
         $user = $request->user();
         abort_unless(in_array($type, $user->accessibleMeetingTypes(), true), 403);
         $query = MeetingMinute::query()->where('meeting_type', $type->value)->with(['participants', 'meetingScope'])->withCount('versions');
-        $canViewAll = $user->manages($type);
+        $canViewAll = $user->isSystemAdmin();
+        $managedScopeIds = $user->managedScopeIds($type);
+        $ownScopeIds = $user->meetingScopeIds($type);
         if (! $canViewAll) {
-            $query->where('created_by', $user->id)->whereIn('meeting_scope_id', $user->meetingScopeIds($type));
+            $query->where(function ($visible) use ($user, $managedScopeIds, $ownScopeIds): void {
+                $visible->whereIn('meeting_scope_id', $managedScopeIds)
+                    ->orWhere(fn ($own) => $own->where('created_by', $user->id)->whereIn('meeting_scope_id', $ownScopeIds));
+            });
         }
         $request->validate(['overdue' => 'nullable|in:0,1']);
         $query->when($request->filled('meeting_scope_id'), fn ($q) => $q->where('meeting_scope_id', $request->integer('meeting_scope_id')))->when($request->filled('year'), fn ($q) => $q->where('meeting_year', $request->integer('year')))->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))->when($request->filled('overdue'), fn ($q) => $q->where('status', MinuteStatus::Archived->value)->where('is_overdue', $request->boolean('overdue')));
@@ -53,7 +58,7 @@ class MeetingMinuteController extends Controller
                 'can_delete' => Gate::forUser($user)->allows('delete', $minute),
             ]);
         $scopes = MeetingScope::query()->where('meeting_type', $type->value)->where('is_active', true)
-            ->when(! $canViewAll, fn ($scopeQuery) => $scopeQuery->whereIn('id', $user->meetingScopeIds($type)))
+            ->when(! $canViewAll, fn ($scopeQuery) => $scopeQuery->whereIn('id', array_unique([...$managedScopeIds, ...$ownScopeIds])))
             ->orderBy('display_order')->get(['id', 'name']);
 
         return Inertia::render('minutes/Index', [
@@ -110,7 +115,7 @@ class MeetingMinuteController extends Controller
     {
         Gate::authorize('view', $minute);
 
-        return Inertia::render('minutes/Show', ['minute' => $minute->load(['participants', 'versions', 'files', 'returns', 'meetingScope']), 'meetingType' => $this->typePayload($minute->meeting_type), 'canDelete' => Gate::allows('delete', $minute)]);
+        return Inertia::render('minutes/Show', ['minute' => $minute->load(['participants', 'versions', 'files', 'returns', 'meetingScope']), 'meetingType' => $this->typePayload($minute->meeting_type), 'canDelete' => Gate::allows('delete', $minute), 'canReturn' => Gate::allows('returnForCorrection', $minute)]);
     }
 
     public function edit(Request $request, MeetingMinute $minute): Response

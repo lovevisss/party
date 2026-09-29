@@ -41,7 +41,7 @@ test('system administrator can grant all roles from synchronized personnel', fun
     expect(RoleAssignment::whereHas('user', fn ($query) => $query->where('person_id', $person->id))->count())->toBe(3)
         ->and(RoleAssignment::where('role', 'minute_submitter')->value('meeting_type'))->toBe(MeetingType::PartyBranch)
         ->and(RoleAssignment::where('role', 'minute_submitter')->value('meeting_scope_id'))->not->toBeNull()
-        ->and(RoleAssignment::where('role', 'minute_manager')->value('meeting_scope_id'))->toBeNull();
+        ->and(RoleAssignment::where('role', 'minute_manager')->value('meeting_scope_id'))->not->toBeNull();
 });
 
 test('submitter scope uses synchronized organization and rejects unmapped unit', function () {

@@ -17,7 +17,7 @@ class MeetingMinutePolicy
     {
         $type = $minute->meeting_type;
 
-        return $user->manages($type)
+        return $user->manages($type, $minute->meeting_scope_id)
             || ($minute->created_by === $user->id
                 && in_array($minute->meeting_scope_id, $user->meetingScopeIds($type), true));
     }
@@ -42,6 +42,6 @@ class MeetingMinutePolicy
 
     public function returnForCorrection(User $user, MeetingMinute $minute): bool
     {
-        return $user->manages($minute->meeting_type) && $minute->getRawOriginal('status') === 'archived';
+        return $user->manages($minute->meeting_type, $minute->meeting_scope_id) && $minute->getRawOriginal('status') === 'archived';
     }
 }

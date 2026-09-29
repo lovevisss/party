@@ -98,8 +98,8 @@ class AuthorizationImportController extends Controller
                 $lineErrors[] = '启用状态无效';
             }
 
-            $scope = ($person && $meetingType && $role === UserRole::MinuteSubmitter) ? app(MeetingScopeService::class)->scopeForPerson($person, $meetingType) : null;
-            if ($person && $meetingType && $role === UserRole::MinuteSubmitter && ! $scope) {
+            $scope = ($person && $meetingType) ? app(MeetingScopeService::class)->scopeForPerson($person, $meetingType) : null;
+            if ($person && $meetingType && ! $scope) {
                 $lineErrors[] = '人员所属单位不能映射到所选会议类型';
             }
             $payload[] = ['employee_no' => $employeeNo, 'name' => $name, 'meeting_type' => $meetingType?->value, 'meeting_scope' => $scope?->name, 'role' => $role?->value, 'enabled' => $enabledLabel === '启用'];

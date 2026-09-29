@@ -84,13 +84,9 @@ class AuthorizationService
         if (! $meetingType) {
             throw ValidationException::withMessages(['meeting_type' => '请选择会议类型。']);
         }
-        if ($role === UserRole::MinuteManager) {
-            return [null, 'meeting:'.$meetingType->value.':global'];
-        }
-
         $scope = $this->scopes->scopeForPerson($person, $meetingType);
         if (! $scope) {
-            throw ValidationException::withMessages(['person_id' => '该人员所属单位未映射到所选会议类型，不能授予提交权限。']);
+            throw ValidationException::withMessages(['person_id' => '该人员所属单位未映射到所选会议类型，不能授予权限。']);
         }
 
         return [$scope->id, 'meeting:'.$meetingType->value.':scope:'.$scope->id];

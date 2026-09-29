@@ -89,8 +89,6 @@ const commit = (id: string) =>
     );
 const selectedScope = computed(() => {
     if (role.value === 'system_admin') return '全局系统权限';
-    if (role.value === 'minute_manager')
-        return `${props.meetingTypes.find((type) => type.value === meetingType.value)?.label ?? ''}全部范围`;
     const sourceId = selected.value?.organization_id;
     return (
         props.organizations.find(
@@ -276,6 +274,20 @@ const selectedScope = computed(() => {
                                 }}
                             </p>
                         </div>
+                        <div
+                            v-if="batch.status === 'preview'"
+                            class="mt-3 max-h-48 space-y-1 overflow-y-auto border-t pt-2 text-[#52635b]"
+                        >
+                            <p
+                                v-for="(item, index) in batch.payload"
+                                :key="index"
+                            >
+                                {{ item.name }}（{{ item.employee_no }}） ·
+                                {{ roleLabels[item.role] }} ·
+                                {{ item.meeting_scope || '全局' }} ·
+                                {{ item.enabled ? '启用' : '停用' }}
+                            </p>
+                        </div>
                         <button
                             v-if="
                                 batch.status === 'preview' &&
@@ -389,9 +401,9 @@ const selectedScope = computed(() => {
                             <td>
                                 {{
                                     assignment.meeting_scope?.name ||
-                                    (assignment.role === 'minute_manager'
-                                        ? '该类型全部'
-                                        : '全局')
+                                    (assignment.role === 'system_admin'
+                                        ? '全局'
+                                        : '未映射，需重新授权')
                                 }}
                             </td>
                             <td>

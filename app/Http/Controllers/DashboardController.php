@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enums\MeetingType;
-use App\Enums\UserRole;
 use App\Models\MeetingMinute;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -16,14 +15,15 @@ class DashboardController extends Controller
         $user = $request->user();
         $q = MeetingMinute::query()->with('meetingScope');
         if (! $user->isSystemAdmin()) {
-            $managedTypes = $user->roleAssignments()->where('role', UserRole::MinuteManager->value)->toBase()->pluck('meeting_type')->filter()->all();
-            $q->where(function ($access) use ($user, $managedTypes): void {
+            $q->where(function ($access) use ($user): void {
                 $hasCondition = false;
-                if ($managedTypes) {
-                    $access->whereIn('meeting_type', $managedTypes);
-                    $hasCondition = true;
-                }
                 foreach (MeetingType::cases() as $type) {
+                    $managedScopeIds = $user->managedScopeIds($type);
+                    if ($managedScopeIds) {
+                        $method = $hasCondition ? 'orWhere' : 'where';
+                        $access->{$method}(fn ($managed) => $managed->where('meeting_type', $type->value)->whereIn('meeting_scope_id', $managedScopeIds));
+                        $hasCondition = true;
+                    }
                     $scopeIds = $user->meetingScopeIds($type);
                     if ($scopeIds) {
                         $method = $hasCondition ? 'orWhere' : 'where';
