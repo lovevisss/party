@@ -15,7 +15,7 @@ class AuthorizationService
 {
     public function __construct(private readonly MeetingScopeService $scopes) {}
 
-    public function grant(Person $person, UserRole $role, ?MeetingType $meetingType, ?int $grantedBy): RoleAssignment
+    public function grant(Person $person, UserRole $role, ?MeetingType $meetingType, ?int $grantedBy, ?User $existingUser = null): RoleAssignment
     {
         if ($person->status !== 'active') {
             throw ValidationException::withMessages(['person_id' => '停用人员不能新增授权。']);
@@ -27,8 +27,8 @@ class AuthorizationService
 
         [$scopeId, $scopeKey] = $this->scope($person, $role, $meetingType);
 
-        return DB::transaction(function () use ($person, $role, $meetingType, $scopeId, $scopeKey, $grantedBy): RoleAssignment {
-            $user = User::updateOrCreate(
+        return DB::transaction(function () use ($person, $role, $meetingType, $scopeId, $scopeKey, $grantedBy, $existingUser): RoleAssignment {
+            $user = $existingUser ?? User::updateOrCreate(
                 ['cas_account' => $person->employee_no],
                 ['person_id' => $person->id, 'name' => $person->name, 'email' => $person->email ?: $person->employee_no.'@invalid.local', 'password' => bcrypt(Str::random(64)), 'is_active' => true],
             );
@@ -61,6 +61,37 @@ class AuthorizationService
         }
 
         $assignment->delete();
+    }
+
+    public function replace(RoleAssignment $assignment, UserRole $role, ?MeetingType $meetingType, int $grantedBy): RoleAssignment
+    {
+        return DB::transaction(function () use ($assignment, $role, $meetingType, $grantedBy): RoleAssignment {
+            $current = RoleAssignment::query()->lockForUpdate()->findOrFail($assignment->id);
+            if ($current->getRawOriginal('role') === $role->value) {
+                throw ValidationException::withMessages(['role' => '请选择其他角色。']);
+            }
+            if ($current->getRawOriginal('role') === UserRole::SystemAdmin->value && RoleAssignment::where('role', UserRole::SystemAdmin->value)->count() <= 1) {
+                throw ValidationException::withMessages(['role' => '不能调整最后一名系统管理员。']);
+            }
+
+            $person = $current->user()->firstOrFail()->person()->first();
+            if (! $person || $person->status !== 'active') {
+                throw ValidationException::withMessages(['person_id' => '停用或未同步人员不能调整授权。']);
+            }
+
+            if (in_array($role, [UserRole::SystemAdmin, UserRole::GlobalAdmin], true)) {
+                $meetingType = null;
+            }
+            [, $scopeKey] = $this->scope($person, $role, $meetingType);
+            if (RoleAssignment::where('user_id', $current->user_id)->where('role', $role->value)->where('scope_key', $scopeKey)->exists()) {
+                throw ValidationException::withMessages(['role' => '该人员已拥有所选角色和会议类型的授权。']);
+            }
+
+            $replacement = $this->grant($person, $role, $meetingType, $grantedBy, $current->user);
+            $this->revoke($current);
+
+            return $replacement;
+        });
     }
 
     public function revokeForPerson(Person $person, UserRole $role, ?MeetingType $meetingType): ?RoleAssignment

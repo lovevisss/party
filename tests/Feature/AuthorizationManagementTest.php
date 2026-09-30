@@ -2,6 +2,7 @@
 
 use App\Enums\MeetingType;
 use App\Enums\UserRole;
+use App\Models\AuditLog;
 use App\Models\ImportBatch;
 use App\Models\MeetingScope;
 use App\Models\Organization;
@@ -113,6 +114,90 @@ test('last system administrator cannot be revoked', function () {
     $assignment = $admin->roleAssignments()->firstOrFail();
 
     expect(fn () => app(AuthorizationService::class)->revoke($assignment))->toThrow(ValidationException::class);
+});
+
+test('adjusting a role replaces only the selected assignment and records the change', function () {
+    $organization = Organization::create(['external_code' => '100301', 'name' => '金融与经贸学院']);
+    app(MeetingScopeService::class)->syncOrganizationMappings();
+    $person = authorizationPerson($organization);
+    $admin = authorizationAdmin();
+    $service = app(AuthorizationService::class);
+    $source = $service->grant($person, UserRole::MinuteSubmitter, MeetingType::PartyBranch, $admin->id);
+    $other = $service->grant($person, UserRole::MinuteSubmitter, MeetingType::PartyGovernmentJoint, $admin->id);
+    $source->user->update(['cas_account' => 'legacy-account']);
+
+    $this->actingAs($admin)->patch('/admin/authorizations/'.$source->id, ['role' => 'minute_manager', 'meeting_type' => 'party_branch'])->assertSessionHasNoErrors();
+
+    expect(RoleAssignment::whereKey($source->id)->exists())->toBeFalse()
+        ->and($other->fresh())->not->toBeNull()
+        ->and(RoleAssignment::where('user_id', $source->user_id)->where('role', 'minute_manager')->where('meeting_type', MeetingType::PartyBranch->value)->value('meeting_scope_id'))->not->toBeNull()
+        ->and(RoleAssignment::where('role', 'minute_manager')->value('user_id'))->toBe($source->user_id)
+        ->and(AuditLog::where('event', 'authorization.adjusted')->count())->toBe(1);
+});
+
+test('adjusting between global and meeting roles clears or resolves meeting scope', function () {
+    $organization = Organization::create(['external_code' => '100301', 'name' => '金融与经贸学院']);
+    app(MeetingScopeService::class)->syncOrganizationMappings();
+    $person = authorizationPerson($organization);
+    $admin = authorizationAdmin();
+    $global = app(AuthorizationService::class)->grant($person, UserRole::GlobalAdmin, null, $admin->id);
+
+    $this->actingAs($admin)->patch('/admin/authorizations/'.$global->id, ['role' => 'minute_manager', 'meeting_type' => 'party_government_joint'])->assertSessionHasNoErrors();
+    $manager = RoleAssignment::where('user_id', $global->user_id)->where('role', 'minute_manager')->firstOrFail();
+    expect($manager->meeting_type)->toBe(MeetingType::PartyGovernmentJoint)->and($manager->meeting_scope_id)->not->toBeNull();
+
+    $this->actingAs($admin)->patch('/admin/authorizations/'.$manager->id, ['role' => 'global_admin', 'meeting_type' => 'party_branch'])->assertSessionHasNoErrors();
+    $replacement = RoleAssignment::where('user_id', $global->user_id)->where('role', 'global_admin')->firstOrFail();
+    expect($replacement->meeting_type)->toBeNull()->and($replacement->meeting_scope_id)->toBeNull()->and($replacement->scope_key)->toBe('global');
+});
+
+test('adjustment rejects an existing target and keeps both assignments', function () {
+    $organization = Organization::create(['external_code' => '100301', 'name' => '金融与经贸学院']);
+    app(MeetingScopeService::class)->syncOrganizationMappings();
+    $person = authorizationPerson($organization);
+    $admin = authorizationAdmin();
+    $service = app(AuthorizationService::class);
+    $source = $service->grant($person, UserRole::MinuteSubmitter, MeetingType::PartyBranch, $admin->id);
+    $target = $service->grant($person, UserRole::MinuteManager, MeetingType::PartyBranch, $admin->id);
+
+    $this->actingAs($admin)->patch('/admin/authorizations/'.$source->id, ['role' => 'minute_manager', 'meeting_type' => 'party_branch'])->assertSessionHasErrors('role');
+    expect($source->fresh())->not->toBeNull()->and($target->fresh())->not->toBeNull()->and(AuditLog::where('event', 'authorization.adjusted')->count())->toBe(0);
+});
+
+test('adjustment rejects inactive or unmapped people without changing the original assignment', function () {
+    $organization = Organization::create(['external_code' => 'UNKNOWN', 'name' => '未映射单位']);
+    $person = authorizationPerson($organization);
+    $admin = authorizationAdmin();
+    $source = app(AuthorizationService::class)->grant($person, UserRole::GlobalAdmin, null, $admin->id);
+
+    $this->actingAs($admin)->patch('/admin/authorizations/'.$source->id, ['role' => 'minute_manager', 'meeting_type' => 'party_branch'])->assertSessionHasErrors('person_id');
+    expect($source->fresh())->not->toBeNull();
+
+    $person->update(['status' => 'inactive']);
+    $this->actingAs($admin)->patch('/admin/authorizations/'.$source->id, ['role' => 'system_admin'])->assertSessionHasErrors('person_id');
+    expect($source->fresh())->not->toBeNull()->and(RoleAssignment::where('role', 'system_admin')->count())->toBe(1);
+});
+
+test('the last system administrator cannot be adjusted away and revoke remains available for other roles', function () {
+    $admin = authorizationAdmin();
+    $adminAssignment = $admin->roleAssignments()->firstOrFail();
+    $organization = Organization::create(['external_code' => '100301', 'name' => '金融与经贸学院']);
+    $person = authorizationPerson($organization);
+
+    $this->actingAs($admin)->patch('/admin/authorizations/'.$adminAssignment->id, ['role' => 'global_admin'])->assertSessionHasErrors('role');
+    expect($adminAssignment->fresh())->not->toBeNull()->and(RoleAssignment::where('role', 'global_admin')->count())->toBe(0);
+
+    $global = app(AuthorizationService::class)->grant($person, UserRole::GlobalAdmin, null, $admin->id);
+    $this->actingAs($admin)->delete('/admin/authorizations/'.$global->id)->assertSessionHasNoErrors();
+    expect(RoleAssignment::whereKey($global->id)->exists())->toBeFalse();
+});
+
+test('only system administrators may adjust roles', function () {
+    $admin = authorizationAdmin();
+    $global = User::factory()->create();
+    RoleAssignment::create(['user_id' => $global->id, 'role' => UserRole::GlobalAdmin, 'scope_key' => 'global']);
+
+    $this->actingAs($global)->patch('/admin/authorizations/'.$admin->roleAssignments()->firstOrFail()->id, ['role' => 'global_admin'])->assertForbidden();
 });
 
 test('downloaded xlsx template contains two sheets and required headers', function () {

@@ -38,4 +38,25 @@ class AuthorizationController extends Controller
 
         return back()->with('success', '授权已撤销。');
     }
+
+    public function update(Request $request, RoleAssignment $assignment, AuthorizationService $authorizations, AuditService $audit): RedirectResponse
+    {
+        $data = $request->validate([
+            'role' => ['required', Rule::enum(UserRole::class)],
+            'meeting_type' => ['nullable', Rule::enum(MeetingType::class)],
+        ]);
+        $role = UserRole::from($data['role']);
+        $type = isset($data['meeting_type']) ? MeetingType::from($data['meeting_type']) : null;
+        $previous = ['role' => $assignment->getRawOriginal('role'), 'meeting_type' => $assignment->getRawOriginal('meeting_type'), 'scope_key' => $assignment->scope_key];
+        $replacement = $authorizations->replace($assignment, $role, $type, $request->user()->id);
+        $audit->record('authorization.adjusted', $replacement, [
+            'person_id' => $replacement->user->person_id,
+            'role' => $role->value,
+            'scope_key' => $replacement->scope_key,
+            'previous_assignment_id' => $assignment->id,
+            'previous' => $previous,
+        ]);
+
+        return back()->with('success', '人员授权已调整。');
+    }
 }

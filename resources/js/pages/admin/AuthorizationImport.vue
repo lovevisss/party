@@ -4,6 +4,7 @@ import { Link, router } from '@inertiajs/vue3';
 import {
     CheckCircle2,
     Download,
+    Pencil,
     Search,
     ShieldCheck,
     Trash2,
@@ -12,6 +13,12 @@ import {
     Users,
 } from '@lucide/vue';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogTitle,
+} from '@/components/ui/dialog';
 
 const props = defineProps<{
     assignments: any;
@@ -26,6 +33,13 @@ const selected = ref<any | null>(null);
 const role = ref('minute_submitter');
 const meetingType = ref('party_branch');
 const file = ref<File | null>(null);
+const adjustment = ref<any | null>(null);
+const adjustmentOpen = ref(false);
+const adjustmentMode = ref<'role' | 'revoke'>('role');
+const targetRole = ref('');
+const targetMeetingType = ref('');
+const adjustmentErrors = ref<Record<string, string>>({});
+const adjustmentProcessing = ref(false);
 const filters = ref({
     q: props.filters.q ?? '',
     role: props.filters.role ?? '',
@@ -45,6 +59,11 @@ const roleLabels: Record<string, string> = {
     global_admin: '全局管理员',
     system_admin: '系统管理员',
 };
+const availableTargetRoles = computed(() =>
+    Object.entries(roleLabels).filter(
+        ([key]) => key !== adjustment.value?.role,
+    ),
+);
 const searchPeople = async () => {
     people.value = await fetch(
         `/people/search?q=${encodeURIComponent(personQuery.value)}`,
@@ -68,13 +87,61 @@ const grant = () =>
         },
         { preserveScroll: true },
     );
-const revoke = (assignment: any) =>
-    confirm(
-        `确认撤销 ${assignment.user?.name} 的${roleLabels[assignment.role]}权限吗？`,
-    ) &&
-    router.delete(`/admin/authorizations/${assignment.id}`, {
+const openAdjustment = (assignment: any) => {
+    adjustment.value = assignment;
+    adjustmentMode.value = 'role';
+    targetRole.value = '';
+    targetMeetingType.value = assignment.meeting_type ?? '';
+    adjustmentErrors.value = {};
+    adjustmentOpen.value = true;
+};
+const targetNeedsMeetingType = computed(() =>
+    ['minute_submitter', 'minute_manager'].includes(targetRole.value),
+);
+const targetScope = computed(() => {
+    if (!targetNeedsMeetingType.value) return '全局';
+    const organizationId = adjustment.value?.user?.person?.organization_id;
+    return (
+        props.organizations.find(
+            (scope) =>
+                scope.meeting_type === targetMeetingType.value &&
+                scope.organizations?.some(
+                    (org: any) => org.id === organizationId,
+                ),
+        )?.name ?? '该单位未映射到所选会议类型'
+    );
+});
+const submitAdjustment = () => {
+    if (!adjustment.value || adjustmentProcessing.value) return;
+    adjustmentErrors.value = {};
+    adjustmentProcessing.value = true;
+    const options = {
         preserveScroll: true,
-    });
+        onSuccess: () => {
+            adjustmentOpen.value = false;
+        },
+        onError: (errors: Record<string, string>) => {
+            adjustmentErrors.value = errors;
+        },
+        onFinish: () => {
+            adjustmentProcessing.value = false;
+        },
+    };
+    if (adjustmentMode.value === 'revoke') {
+        router.delete(`/admin/authorizations/${adjustment.value.id}`, options);
+    } else {
+        router.patch(
+            `/admin/authorizations/${adjustment.value.id}`,
+            {
+                role: targetRole.value,
+                meeting_type: targetNeedsMeetingType.value
+                    ? targetMeetingType.value
+                    : null,
+            },
+            options,
+        );
+    }
+};
 const applyFilters = () =>
     router.get('/admin/authorization-import', filters.value, {
         preserveState: true,
@@ -435,10 +502,10 @@ const selectedScope = computed(() => {
                             </td>
                             <td>
                                 <button
-                                    class="inline-flex items-center gap-1 text-[#9f3f36]"
-                                    @click="revoke(assignment)"
+                                    class="inline-flex items-center gap-1 font-medium text-[#2f6a59] hover:text-[#173b32]"
+                                    @click="openAdjustment(assignment)"
                                 >
-                                    <Trash2 :size="14" />撤销
+                                    <Pencil :size="14" />调整
                                 </button>
                             </td>
                         </tr>
@@ -468,5 +535,171 @@ const selectedScope = computed(() => {
                 />
             </div>
         </section>
+        <Dialog v-model:open="adjustmentOpen">
+            <DialogContent class="border-[#d9d2c4] bg-[#faf8f3] sm:max-w-xl">
+                <DialogTitle class="font-serif text-xl text-[#173b32]"
+                    >调整人员授权</DialogTitle
+                >
+                <DialogDescription class="text-[#68736e]"
+                    >仅处理当前这一条授权，该人员的其他授权不受影响。</DialogDescription
+                >
+                <div v-if="adjustment" class="space-y-5 text-sm">
+                    <div
+                        class="grid gap-3 border border-[#ded7c9] bg-white p-4 sm:grid-cols-2"
+                    >
+                        <div>
+                            <p class="text-xs text-[#7c8580]">授权人员</p>
+                            <p class="mt-1 font-medium">
+                                {{ adjustment.user?.name }} ·
+                                {{ adjustment.user?.person?.employee_no }}
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-[#7c8580]">当前授权</p>
+                            <p class="mt-1 font-medium">
+                                {{ roleLabels[adjustment.role] }} ·
+                                {{
+                                    meetingTypes.find(
+                                        (type) =>
+                                            type.value ===
+                                            adjustment.meeting_type,
+                                    )?.label || '全局'
+                                }}
+                            </p>
+                        </div>
+                    </div>
+                    <div
+                        class="grid grid-cols-2 gap-2"
+                        role="group"
+                        aria-label="调整方式"
+                    >
+                        <button
+                            type="button"
+                            class="border px-4 py-3 text-left font-medium transition"
+                            :class="
+                                adjustmentMode === 'role'
+                                    ? 'border-[#2f6a59] bg-[#e9f1ed] text-[#205342]'
+                                    : 'border-[#ded7c9] bg-white text-[#68736e]'
+                            "
+                            :aria-pressed="adjustmentMode === 'role'"
+                            @click="
+                                adjustmentMode = 'role';
+                                adjustmentErrors = {};
+                            "
+                        >
+                            调整角色
+                        </button>
+                        <button
+                            type="button"
+                            class="border px-4 py-3 text-left font-medium transition"
+                            :class="
+                                adjustmentMode === 'revoke'
+                                    ? 'border-[#a6473d] bg-[#fbefed] text-[#8a2f27]'
+                                    : 'border-[#ded7c9] bg-white text-[#68736e]'
+                            "
+                            :aria-pressed="adjustmentMode === 'revoke'"
+                            @click="
+                                adjustmentMode = 'revoke';
+                                adjustmentErrors = {};
+                            "
+                        >
+                            撤销授权
+                        </button>
+                    </div>
+                    <div v-if="adjustmentMode === 'role'" class="space-y-4">
+                        <label class="field"
+                            ><span>调整为</span
+                            ><select v-model="targetRole">
+                                <option value="" disabled>
+                                    请选择其他角色
+                                </option>
+                                <option
+                                    v-for="[key, label] in availableTargetRoles"
+                                    :key="key"
+                                    :value="key"
+                                >
+                                    {{ label }}
+                                </option>
+                            </select></label
+                        >
+                        <label v-if="targetNeedsMeetingType" class="field"
+                            ><span>会议类型</span
+                            ><select v-model="targetMeetingType">
+                                <option value="" disabled>
+                                    请选择会议类型
+                                </option>
+                                <option
+                                    v-for="type in meetingTypes"
+                                    :key="type.value"
+                                    :value="type.value"
+                                >
+                                    {{ type.label }}
+                                </option>
+                            </select></label
+                        >
+                        <p
+                            v-if="targetNeedsMeetingType && targetMeetingType"
+                            class="text-xs text-[#68736e]"
+                        >
+                            授权范围：{{ targetScope }}
+                        </p>
+                    </div>
+                    <p
+                        v-else
+                        class="border-l-4 border-[#a6473d] bg-[#fbefed] px-4 py-3 text-[#8a2f27]"
+                    >
+                        确认后将撤销当前这条授权。
+                    </p>
+                    <div
+                        v-if="Object.keys(adjustmentErrors).length"
+                        role="alert"
+                        class="border-l-4 border-[#a6473d] bg-white px-4 py-3 text-[#8a2f27]"
+                    >
+                        <p v-for="(error, key) in adjustmentErrors" :key="key">
+                            {{ error }}
+                        </p>
+                    </div>
+                    <div
+                        class="flex justify-end gap-3 border-t border-[#ded7c9] pt-4"
+                    >
+                        <button
+                            type="button"
+                            class="btn-secondary"
+                            :disabled="adjustmentProcessing"
+                            @click="adjustmentOpen = false"
+                        >
+                            取消
+                        </button>
+                        <button
+                            type="button"
+                            :class="
+                                adjustmentMode === 'revoke'
+                                    ? 'inline-flex items-center gap-2 bg-[#a6473d] px-4 py-2 text-sm font-medium text-white disabled:opacity-50'
+                                    : 'btn-primary'
+                            "
+                            :disabled="
+                                adjustmentProcessing ||
+                                (adjustmentMode === 'role' &&
+                                    (!targetRole ||
+                                        (targetNeedsMeetingType &&
+                                            !targetMeetingType)))
+                            "
+                            @click="submitAdjustment"
+                        >
+                            <Trash2
+                                v-if="adjustmentMode === 'revoke'"
+                                :size="15"
+                            />{{
+                                adjustmentProcessing
+                                    ? '处理中…'
+                                    : adjustmentMode === 'revoke'
+                                      ? '确认撤销'
+                                      : '保存调整'
+                            }}
+                        </button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
     </BusinessLayout>
 </template>

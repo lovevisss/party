@@ -50,6 +50,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/authorization-import/preview', [AuthorizationImportController::class, 'preview'])->name('authorization-import.preview');
         Route::post('/authorization-import/{batch}/commit', [AuthorizationImportController::class, 'commit'])->name('authorization-import.commit');
         Route::post('/authorizations', [AuthorizationController::class, 'store'])->name('authorizations.store');
+        Route::patch('/authorizations/{assignment}', [AuthorizationController::class, 'update'])->name('authorizations.update');
         Route::delete('/authorizations/{assignment}', [AuthorizationController::class, 'destroy'])->name('authorizations.destroy');
         Route::post('/workdays/import', [WorkdayController::class, 'import'])->name('workdays.import');
         Route::resource('workdays', WorkdayController::class)->only(['index', 'store', 'destroy']);

@@ -23,6 +23,7 @@ class AuditLogPresenter
         'auth.back_channel_logout' => '统一认证通知退出',
         'authorization.granted' => '授予权限',
         'authorization.revoked' => '撤销权限',
+        'authorization.adjusted' => '调整权限',
         'authorization.import_committed' => '批量导入授权',
         'participant_preset.saved' => '保存常用人员清单',
         'participant_preset.deleted' => '删除常用人员清单',
@@ -138,9 +139,17 @@ class AuditLogPresenter
             'global_admin' => '全局管理员',
             default => '权限',
         };
+        $previousRole = $metadata['previous']['role'] ?? null;
+        $previousLabel = match ($previousRole) {
+            'minute_submitter' => '会议提交人',
+            'minute_manager' => '纪要管理员',
+            'system_admin' => '系统管理员',
+            'global_admin' => '全局管理员',
+            default => null,
+        };
         $scopeId = $assignment ? $assignment->meeting_scope_id : null;
         $scope = $scopes[$scopeId ?? '']->name ?? null;
 
-        return ['人员权限', trim($name.' · '.$roleLabel.($scope ? ' · '.$scope : ''))];
+        return ['人员权限', trim($name.' · '.($previousLabel ? $previousLabel.' → ' : '').$roleLabel.($scope ? ' · '.$scope : ''))];
     }
 }
