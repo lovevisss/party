@@ -31,7 +31,6 @@ class MinutesArchiveService
                     'title' => 'required|string|max:200',
                     'meeting_start_at' => 'required|date',
                     'meeting_end_at' => 'required|date|after:meeting_start_at',
-                    'first_topic_content' => 'required|string|max:20000',
                 ],
                 [
                     'meeting_year.required' => '基本信息第 2 项“会议年度”未填写。',
@@ -40,7 +39,6 @@ class MinutesArchiveService
                     'meeting_start_at.required' => '基本信息第 5 项“开始时间”未填写。',
                     'meeting_end_at.required' => '基本信息第 6 项“结束时间”未填写。',
                     'meeting_end_at.after' => '基本信息第 6 项“结束时间”必须晚于“开始时间”。',
-                    'first_topic_content.required' => '第一议题学习内容未填写。',
                 ],
                 [
                     'meeting_year' => '基本信息第 2 项“会议年度”',
@@ -48,7 +46,6 @@ class MinutesArchiveService
                     'title' => '基本信息第 4 项“会议名称”',
                     'meeting_start_at' => '基本信息第 5 项“开始时间”',
                     'meeting_end_at' => '基本信息第 6 项“结束时间”',
-                    'first_topic_content' => '第一议题学习内容',
                 ],
             )->validate();
 
@@ -75,9 +72,11 @@ class MinutesArchiveService
                 throw ValidationException::withMessages(['archived_at' => '实际归档时间不能晚于当前时间。']);
             }
             $due = $this->workdays->thirdWorkdayAfter($meetingEnd);
-            $overdue = $archivedAt->greaterThan($due);
+            $overdue = $version === 1
+                ? $archivedAt->greaterThan($due)
+                : MinuteVersion::where('meeting_minute_id', $minute->id)->where('version_no', 1)->firstOrFail()->is_overdue;
             $snapshot = [
-                'minute' => $minute->only(['organization_id', 'meeting_scope_id', 'meeting_type', 'meeting_year', 'sequence_no', 'title', 'meeting_start_at', 'meeting_end_at', 'first_topic_content', 'remarks']),
+                'minute' => $minute->only(['organization_id', 'meeting_scope_id', 'meeting_type', 'meeting_year', 'sequence_no', 'title', 'meeting_start_at', 'meeting_end_at', 'remarks']),
                 'participants' => $minute->participants()->get()->map->only(['person_id', 'role_type', 'display_name', 'is_external'])->all(),
             ];
             $versionModel = MinuteVersion::create([

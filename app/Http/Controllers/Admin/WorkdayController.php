@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Workday;
+use App\Models\WorkdayRule;
 use App\Services\AuditService;
 use App\Services\SpreadsheetReader;
 use Illuminate\Http\RedirectResponse;
@@ -16,7 +17,11 @@ class WorkdayController extends Controller
 {
     public function index(Request $r): Response
     {
-        return Inertia::render('admin/Workdays', ['workdays' => Workday::when($r->year, fn ($q, $y) => $q->whereYear('date', $y))->orderBy('date')->paginate(40), 'year' => $r->integer('year') ?: now()->year]);
+        return Inertia::render('admin/Workdays', [
+            'workdays' => Workday::when($r->year, fn ($q, $y) => $q->whereYear('date', $y))->orderBy('date')->paginate(40),
+            'rules' => WorkdayRule::orderBy('kind')->orderBy('start_date')->orderBy('start_month_day')->get(),
+            'year' => $r->integer('year') ?: now()->year,
+        ]);
     }
 
     public function store(Request $r, AuditService $a): RedirectResponse

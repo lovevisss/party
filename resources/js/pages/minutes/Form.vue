@@ -35,7 +35,6 @@ const form = useForm({
     title: props.minute?.title ?? '',
     meeting_start_at: minuteDateTimeInput(props.minute?.meeting_start_at),
     meeting_end_at: minuteDateTimeInput(props.minute?.meeting_end_at),
-    first_topic_content: props.minute?.first_topic_content ?? '',
     lock_version: props.minute?.lock_version ?? 0,
     participants: props.minute?.participants ?? [],
 });
@@ -121,9 +120,20 @@ const availablePresets = computed(() =>
     ),
 );
 
+const syncSavedVersion = (page: { props: Record<string, unknown> }) => {
+    const savedMinute = page.props.minute as
+        | { lock_version?: number }
+        | undefined;
+    if (savedMinute?.lock_version === undefined) return;
+    form.lock_version = savedMinute.lock_version;
+    form.defaults();
+};
 const save = () =>
     props.minute
-        ? form.put(`/minutes/${props.minute.id}`, { preserveScroll: true })
+        ? form.put(`/minutes/${props.minute.id}`, {
+              preserveScroll: true,
+              onSuccess: syncSavedVersion,
+          })
         : form.post(`/minutes/${props.meetingType.slug}`);
 const archive = () => {
     archiveError.value = '';
@@ -157,7 +167,10 @@ const archive = () => {
     if (form.isDirty) {
         form.put(`/minutes/${props.minute.id}`, {
             preserveScroll: true,
-            onSuccess: submitArchive,
+            onSuccess: (page) => {
+                syncSavedVersion(page);
+                submitArchive();
+            },
             onError: () => {
                 archiving.value = false;
             },
@@ -552,23 +565,6 @@ const upload = () => {
                 <div class="section-head">
                     <span>03</span>
                     <div>
-                        <h2>第一议题学习内容</h2>
-                    </div>
-                </div>
-                <textarea
-                    v-model="form.first_topic_content"
-                    class="control min-h-56 resize-y leading-7"
-                    maxlength="20000"
-                    placeholder="请输入第一议题学习内容……"
-                />
-                <div class="mt-2 text-right text-xs text-[#8a918d]">
-                    {{ form.first_topic_content.length }} / 20,000
-                </div>
-            </section>
-            <section class="form-card">
-                <div class="section-head">
-                    <span>04</span>
-                    <div>
                         <h2>
                             会议纪要
                             <span class="text-red-700" aria-label="必填"
@@ -651,7 +647,7 @@ const upload = () => {
             </section>
             <section v-if="minute" class="form-card">
                 <div class="section-head">
-                    <span>05</span>
+                    <span>04</span>
                     <div>
                         <h2>归档时间</h2>
                         <p>正式归档时由系统自动记录，无需手动填写</p>

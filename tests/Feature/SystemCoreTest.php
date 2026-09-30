@@ -61,7 +61,6 @@ function readyMinute(User $user, Organization $organization, int $sequence): Mee
         'title' => "归档时间测试 {$sequence}",
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
-        'first_topic_content' => '学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -151,7 +150,7 @@ test('archive uses server time and resubmission updates only the current version
     $this->travelTo(CarbonImmutable::parse('2026-09-07 12:00:00', 'Asia/Shanghai'));
     $this->actingAs($user)->post($url, ['archived_at' => '2026-09-08T12:00'])->assertRedirect("/minutes/{$minute->id}");
     app(MinutesArchiveService::class)->returnForCorrection($minute, $user, '需要修改后重新归档');
-    $minute->update(['meeting_end_at' => '2026-09-03 10:00:00']);
+    Workday::create(['date' => '2026-09-05', 'is_workday' => true]);
     MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'revised.pdf', 'object_key' => "minutes/{$minute->id}/revised.pdf", 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('a', 64), 'uploaded_by' => $user->id]);
 
     $this->travelTo(CarbonImmutable::parse('2026-09-09 12:00:00', 'Asia/Shanghai'));
@@ -161,8 +160,16 @@ test('archive uses server time and resubmission updates only the current version
         ->and($versions[0]->archived_at->format('Y-m-d H:i'))->toBe('2026-09-07 12:00')
         ->and($versions[1]->archived_at->format('Y-m-d H:i'))->toBe('2026-09-09 12:00')
         ->and($minute->fresh()->archived_at->format('Y-m-d H:i'))->toBe('2026-09-09 12:00')
-        ->and($minute->fresh()->due_at->format('Y-m-d'))->toBe('2026-09-08')
-        ->and($minute->fresh()->is_overdue)->toBeTrue();
+        ->and($versions[0]->due_at->format('Y-m-d'))->toBe('2026-09-07')
+        ->and($versions[0]->is_overdue)->toBeFalse()
+        ->and($versions[1]->due_at->format('Y-m-d'))->toBe('2026-09-05')
+        ->and($versions[1]->is_overdue)->toBeFalse()
+        ->and($minute->fresh()->due_at->format('Y-m-d'))->toBe('2026-09-05')
+        ->and($minute->fresh()->is_overdue)->toBeFalse();
+    $this->actingAs($user)->get('/dashboard')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('stats.overdue', 0)->etc());
+    $this->actingAs($user)->get('/minutes/party-branch?overdue=0')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('minutes.total', 1)->etc());
 });
 
 test('validation messages identify the exact minute section field and participant row', function () {
@@ -343,13 +350,14 @@ test('archive creates immutable version and fixes due date', function () {
     foreach (range(3, 7) as $day) {
         Workday::create(['date' => "2026-09-0$day", 'is_workday' => true]);
     }
-    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_branch', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党总支会议', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'first_topic_content' => '学习内容', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
+    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_branch', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党总支会议', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
     foreach (['chair', 'recorder', 'attendee'] as $role) {
         MinuteParticipant::create(['meeting_minute_id' => $minute->id, 'role_type' => $role, 'display_name' => $role, 'is_external' => true]);
     }
     MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'minutes.pdf', 'object_key' => 'test.pdf', 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('a', 64), 'uploaded_by' => $user->id]);
     $result = app(MinutesArchiveService::class)->archive($minute, $user, CarbonImmutable::parse('2026-09-07 23:59:00'));
     expect($result->status)->toBe(MinuteStatus::Archived)->and($result->current_version)->toBe(1)->and($result->versions)->toHaveCount(1)->and($result->due_at->format('H:i:s'))->toBe('23:59:59');
+    expect(array_key_exists('first_topic_content', $result->versions->first()->snapshot['minute']))->toBeFalse();
 });
 
 test('only a PDF meeting minute can be uploaded and used for archive', function () {
@@ -364,7 +372,6 @@ test('only a PDF meeting minute can be uploaded and used for archive', function 
         'title' => '会议纪要PDF测试',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
-        'first_topic_content' => '第一议题学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -430,7 +437,7 @@ test('a signed PDF can be uploaded from the new minute form without first saving
     $minute = MeetingMinute::sole();
     expect($minute->status)->toBe(MinuteStatus::Draft)
         ->and($minute->title)->toBe('填表过程中上传')
-        ->and($minute->first_topic_content)->toBe('已填写的学习内容')
+        ->and($minute->first_topic_content)->toBeNull()
         ->and($minute->remarks)->toBeNull()
         ->and($minute->participants()->value('display_name'))->toBe('主持甲')
         ->and($minute->files()->whereNull('version_no')->value('original_name'))->toBe('signed.pdf');
@@ -465,7 +472,6 @@ test('uploaded attachment is visible while archive validation errors are returne
         'title' => '附件展示测试',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
-        'first_topic_content' => '学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -554,7 +560,6 @@ test('saving participant changes before archive makes the new roles available to
         'title' => '保存后归档测试',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
-        'first_topic_content' => '学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -576,7 +581,6 @@ test('saving participant changes before archive makes the new roles available to
         'title' => '保存后归档测试',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
-        'first_topic_content' => '学习内容',
         'lock_version' => 0,
         'participants' => $participants,
     ])->assertSessionHasNoErrors();
@@ -584,4 +588,27 @@ test('saving participant changes before archive makes the new roles available to
 
     expect($minute->fresh()->status)->toBe(MinuteStatus::Archived)
         ->and($minute->participants()->pluck('role_type')->all())->toContain('chair', 'recorder', 'attendee');
+});
+
+test('stale draft version returns a form error instead of a conflict page', function () {
+    $organization = Organization::create(['external_code' => 'STALE-DRAFT', 'name' => '草稿版本测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $minute = readyMinute($user, $organization, 10);
+    $url = "/minutes/{$minute->id}";
+    $data = [
+        'meeting_year' => 2026,
+        'sequence_no' => 10,
+        'title' => '首次保存',
+        'meeting_start_at' => '2026-09-02 09:00:00',
+        'meeting_end_at' => '2026-09-02 10:00:00',
+        'participants' => $minute->participants()->get()->map->only(['person_id', 'role_type', 'display_name', 'is_external'])->all(),
+    ];
+
+    $this->actingAs($user)->put($url, [...$data, 'lock_version' => 0])->assertSessionHasNoErrors();
+    $this->actingAs($user)->put($url, [...$data, 'title' => '过期页面的修改', 'lock_version' => 0])
+        ->assertRedirect()
+        ->assertSessionHasErrors(['lock_version' => '记录已被他人更新，请刷新页面后重试。']);
+
+    expect($minute->fresh()->title)->toBe('首次保存')
+        ->and($minute->fresh()->lock_version)->toBe(1);
 });

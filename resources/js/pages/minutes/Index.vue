@@ -253,6 +253,14 @@ const pagination = computed(() =>
                                             minute.is_overdue
                                         "
                                     />
+                                    <span
+                                        v-if="
+                                            minute.status === 'archived' &&
+                                            minute.current_version > 1
+                                        "
+                                        class="ml-1 text-xs text-[#68736e]"
+                                        >逾期状态按首次提交判定</span
+                                    >
                                 </div>
                             </td>
                             <td class="tabular-nums">

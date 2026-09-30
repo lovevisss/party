@@ -11,6 +11,7 @@ use App\Models\Person;
 use App\Models\RoleAssignment;
 use App\Models\User;
 use App\Models\Workday;
+use App\Models\WorkdayRule;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
@@ -37,6 +38,8 @@ class AuditLogPresenter
         'workday.saved' => '保存工作日历',
         'workday.deleted' => '删除工作日历日期',
         'workday.imported' => '导入工作日历',
+        'workday.rule_saved' => '保存工作日历规则',
+        'workday.rule_deleted' => '删除工作日历规则',
     ];
 
     public const CATEGORIES = [
@@ -68,8 +71,9 @@ class AuditLogPresenter
         $presets = ParticipantPreset::whereIn('id', $subjectIds(ParticipantPreset::class))->get(['id', 'name'])->keyBy('id')->all();
         $scopes = MeetingScope::whereIn('id', $assignmentRows->pluck('meeting_scope_id')->filter()->unique())->get(['id', 'name'])->keyBy('id')->all();
         $workdays = Workday::whereIn('date', $subjectIds(Workday::class))->get(['date', 'name'])->keyBy('date')->all();
+        $workdayRules = WorkdayRule::whereIn('id', $subjectIds(WorkdayRule::class))->get(['id', 'name'])->keyBy('id')->all();
 
-        return $logs->map(function (AuditLog $log) use ($users, $people, $minutes, $presets, $assignments, $scopes, $workdays): array {
+        return $logs->map(function (AuditLog $log) use ($users, $people, $minutes, $presets, $assignments, $scopes, $workdays, $workdayRules): array {
             $id = (string) $log->subject_id;
             $rawMetadata = $log->getAttribute('metadata');
             $metadata = is_array($rawMetadata) ? $rawMetadata : [];
@@ -81,6 +85,7 @@ class AuditLogPresenter
                 ParticipantPreset::class => ['常用人员清单', $presets[$id]->name ?? ($metadata['name'] ?? '记录已删除')],
                 ImportBatch::class => ['授权导入批次', isset($metadata['rows']) ? $metadata['rows'].' 条授权' : '批次记录'],
                 Workday::class => ['工作日历', $workdays[$id]->name ?? ($id ?: '记录已删除')],
+                WorkdayRule::class => ['工作日历规则', $workdayRules[$id]->name ?? ($metadata['name'] ?? '记录已删除')],
                 null => $log->event === 'auth.unmatched'
                     ? ['未匹配账号', $metadata['account'] ?? '账号未记录']
                     : ['系统', '系统操作'],

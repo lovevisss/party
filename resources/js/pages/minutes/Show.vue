@@ -10,6 +10,7 @@ const props = defineProps<{
     meetingType: { value: string; label: string; scope_label: string };
     canDelete: boolean;
     canReturn: boolean;
+    firstArchivedAt: string | null;
 }>();
 const sendBack = () => {
     const reason = prompt('请输入退回原因（5～500字）');
@@ -100,16 +101,19 @@ const role: Record<string, string> = {
                     </dd>
                 </div>
             </dl>
-            <section class="mt-9">
-                <h2 class="doc-title">第一议题学习内容</h2>
-                <div class="text-[15px] leading-8 whitespace-pre-wrap">
-                    {{ minute.first_topic_content }}
-                </div>
-            </section>
             <section
                 class="mt-9 grid gap-5 border-t pt-6 text-sm sm:grid-cols-2"
             >
-                <div>归档时间：{{ minuteDateTime(minute.archived_at) }}</div>
+                <div v-if="firstArchivedAt">
+                    首次提交时间：{{ minuteDateTime(firstArchivedAt) }}
+                </div>
+                <div>
+                    {{
+                        minute.current_version > 1
+                            ? '最近重新提交时间'
+                            : '归档时间'
+                    }}：{{ minuteDateTime(minute.archived_at) }}
+                </div>
                 <div>截止时间：{{ minuteDateTime(minute.due_at, true) }}</div>
                 <div>当前版本：V{{ minute.current_version }}</div>
                 <div>
@@ -120,6 +124,14 @@ const role: Record<string, string> = {
                                 : '按时归档'
                             : '待重新归档'
                     }}
+                    <span
+                        v-if="
+                            minute.status === 'archived' &&
+                            minute.current_version > 1
+                        "
+                        class="ml-1 text-xs text-[#68736e]"
+                        >（按首次提交判定）</span
+                    >
                 </div>
             </section>
             <section class="mt-8 print:hidden">
@@ -132,7 +144,10 @@ const role: Record<string, string> = {
                     V{{ version.version_no }} · 归档时间
                     {{ minuteDateTime(version.archived_at) }} · 截止时间
                     {{ minuteDateTime(version.due_at, true) }} ·
-                    {{ version.is_overdue ? '超时归档' : '按时归档' }}
+                    {{ version.is_overdue ? '超时归档' : '按时归档'
+                    }}<span v-if="version.version_no > 1"
+                        >（按首次提交判定）</span
+                    >
                 </div>
                 <a
                     v-for="file in minute.files"

@@ -9,12 +9,14 @@ use App\Models\MeetingScope;
 use App\Models\ParticipantPreset;
 use App\Services\AuditService;
 use App\Services\MinuteFileService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -130,7 +132,15 @@ class MeetingMinuteController extends Controller
             $minute->load(['versions', 'files', 'returns']);
         }
 
-        return Inertia::render('minutes/Show', ['minute' => $minute, 'meetingType' => $this->typePayload($minute->meeting_type), 'canDelete' => Gate::allows('delete', $minute), 'canReturn' => Gate::allows('returnForCorrection', $minute)]);
+        $firstArchivedAt = $minute->current_version > 1 ? $minute->versions()->where('version_no', 1)->value('archived_at') : null;
+
+        return Inertia::render('minutes/Show', [
+            'minute' => $minute,
+            'meetingType' => $this->typePayload($minute->meeting_type),
+            'canDelete' => Gate::allows('delete', $minute),
+            'canReturn' => Gate::allows('returnForCorrection', $minute),
+            'firstArchivedAt' => $firstArchivedAt ? CarbonImmutable::parse($firstArchivedAt, config('app.timezone'))->toIso8601String() : null,
+        ]);
     }
 
     public function edit(Request $request, MeetingMinute $minute): Response
@@ -153,7 +163,7 @@ class MeetingMinuteController extends Controller
         DB::transaction(function () use ($minute, $data, $lock, $request) {
             $affected = MeetingMinute::whereKey($minute->id)->where('lock_version', $lock)->whereIn('status', ['draft', 'returned'])->update([...$data, 'lock_version' => $lock + 1, 'updated_by' => $request->user()->id, 'updated_at' => now()]);
             if (! $affected) {
-                abort(409, '记录已被他人更新，请刷新后重试。');
+                throw ValidationException::withMessages(['lock_version' => '记录已被他人更新，请刷新页面后重试。']);
             }
             $this->replaceParticipants($minute, $request->input('participants', []));
         });
@@ -187,7 +197,7 @@ class MeetingMinuteController extends Controller
     private function draftData(Request $request): array
     {
         $data = $request->validate(
-            ['meeting_year' => 'nullable|integer|min:2000|max:2100', 'sequence_no' => 'nullable|integer|min:1|max:999', 'title' => 'nullable|string|max:200', 'meeting_start_at' => 'nullable|date', 'meeting_end_at' => 'nullable|date|after:meeting_start_at', 'first_topic_content' => 'nullable|string|max:20000', 'participants' => 'array', 'participants.*.person_id' => 'nullable|exists:people,id', 'participants.*.role_type' => ['required', Rule::in(['chair', 'recorder', 'attendee', 'absent', 'observer'])], 'participants.*.display_name' => 'required|string|max:100', 'participants.*.is_external' => 'boolean'],
+            ['meeting_year' => 'nullable|integer|min:2000|max:2100', 'sequence_no' => 'nullable|integer|min:1|max:999', 'title' => 'nullable|string|max:200', 'meeting_start_at' => 'nullable|date', 'meeting_end_at' => 'nullable|date|after:meeting_start_at', 'participants' => 'array', 'participants.*.person_id' => 'nullable|exists:people,id', 'participants.*.role_type' => ['required', Rule::in(['chair', 'recorder', 'attendee', 'absent', 'observer'])], 'participants.*.display_name' => 'required|string|max:100', 'participants.*.is_external' => 'boolean'],
             [
                 'meeting_end_at.after' => '基本信息第 6 项“结束时间”必须晚于“开始时间”。',
                 'participants.*.person_id.exists' => '人员情况第 :position 行：所选人员不存在或已停用。',
@@ -201,7 +211,6 @@ class MeetingMinuteController extends Controller
                 'title' => '基本信息第 4 项“会议名称”',
                 'meeting_start_at' => '基本信息第 5 项“开始时间”',
                 'meeting_end_at' => '基本信息第 6 项“结束时间”',
-                'first_topic_content' => '第一议题学习内容',
                 'participants' => '人员情况',
             ],
         );

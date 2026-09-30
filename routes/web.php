@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AuthorizationImportController;
 use App\Http\Controllers\Admin\PersonnelSyncController;
 use App\Http\Controllers\Admin\RolePermissionsController;
 use App\Http\Controllers\Admin\WorkdayController;
+use App\Http\Controllers\Admin\WorkdayRuleController;
 use App\Http\Controllers\Auth\CasController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MeetingMinuteController;
@@ -53,6 +54,9 @@ Route::middleware('auth')->group(function () {
         Route::patch('/authorizations/{assignment}', [AuthorizationController::class, 'update'])->name('authorizations.update');
         Route::delete('/authorizations/{assignment}', [AuthorizationController::class, 'destroy'])->name('authorizations.destroy');
         Route::post('/workdays/import', [WorkdayController::class, 'import'])->name('workdays.import');
+        Route::post('/workday-rules', [WorkdayRuleController::class, 'store'])->name('workday-rules.store');
+        Route::put('/workday-rules/{workdayRule}', [WorkdayRuleController::class, 'update'])->name('workday-rules.update');
+        Route::delete('/workday-rules/{workdayRule}', [WorkdayRuleController::class, 'destroy'])->name('workday-rules.destroy');
         Route::resource('workdays', WorkdayController::class)->only(['index', 'store', 'destroy']);
         Route::get('/audit-logs', AuditLogController::class)->name('audit-logs.index');
     });

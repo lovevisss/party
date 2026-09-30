@@ -15,7 +15,9 @@ class MeetingMinute extends Model
 {
     use HasUuids, SoftDeletes;
 
-    protected $fillable = ['organization_id', 'meeting_scope_id', 'meeting_type', 'meeting_year', 'sequence_no', 'title', 'meeting_start_at', 'meeting_end_at', 'first_topic_content', 'remarks', 'status', 'current_version', 'lock_version', 'due_at', 'is_overdue', 'archived_at', 'resubmitted_at', 'created_by', 'updated_by'];
+    protected $fillable = ['organization_id', 'meeting_scope_id', 'meeting_type', 'meeting_year', 'sequence_no', 'title', 'meeting_start_at', 'meeting_end_at', 'remarks', 'status', 'current_version', 'lock_version', 'due_at', 'is_overdue', 'archived_at', 'resubmitted_at', 'created_by', 'updated_by'];
+
+    protected $hidden = ['first_topic_content'];
 
     protected static function booted(): void
     {
