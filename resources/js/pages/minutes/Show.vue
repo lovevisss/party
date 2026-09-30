@@ -101,6 +101,12 @@ const role: Record<string, string> = {
                     </dd>
                 </div>
             </dl>
+            <section v-if="meetingType.value === 'party_branch'" class="mt-9">
+                <h2 class="doc-title">第一议题学习内容</h2>
+                <div class="text-[15px] leading-8 whitespace-pre-wrap">
+                    {{ minute.first_topic_content }}
+                </div>
+            </section>
             <section
                 class="mt-9 grid gap-5 border-t pt-6 text-sm sm:grid-cols-2"
             >

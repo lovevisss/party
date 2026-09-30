@@ -50,6 +50,7 @@ function calendarMinute(User $user, Organization $organization, MeetingScope $sc
         'title' => '工作日历测试纪要',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
+        'first_topic_content' => '学习内容',
         'status' => 'draft',
         'created_by' => $user->id,
         'updated_by' => $user->id,

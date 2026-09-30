@@ -61,6 +61,7 @@ function readyMinute(User $user, Organization $organization, int $sequence): Mee
         'title' => "归档时间测试 {$sequence}",
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
+        'first_topic_content' => '学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -350,14 +351,46 @@ test('archive creates immutable version and fixes due date', function () {
     foreach (range(3, 7) as $day) {
         Workday::create(['date' => "2026-09-0$day", 'is_workday' => true]);
     }
-    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_branch', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党总支会议', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
+    $minute = MeetingMinute::create(['organization_id' => $org->id, 'meeting_type' => 'party_branch', 'meeting_year' => 2026, 'sequence_no' => 1, 'title' => '学院C2026年第1次党总支会议', 'meeting_start_at' => '2026-09-02 09:00:00', 'meeting_end_at' => '2026-09-02 10:00:00', 'first_topic_content' => '学习内容', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
     foreach (['chair', 'recorder', 'attendee'] as $role) {
         MinuteParticipant::create(['meeting_minute_id' => $minute->id, 'role_type' => $role, 'display_name' => $role, 'is_external' => true]);
     }
     MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'minutes.pdf', 'object_key' => 'test.pdf', 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('a', 64), 'uploaded_by' => $user->id]);
     $result = app(MinutesArchiveService::class)->archive($minute, $user, CarbonImmutable::parse('2026-09-07 23:59:00'));
     expect($result->status)->toBe(MinuteStatus::Archived)->and($result->current_version)->toBe(1)->and($result->versions)->toHaveCount(1)->and($result->due_at->format('H:i:s'))->toBe('23:59:59');
-    expect(array_key_exists('first_topic_content', $result->versions->first()->snapshot['minute']))->toBeFalse();
+    expect($result->versions->first()->snapshot['minute']['first_topic_content'])->toBe('学习内容');
+});
+
+test('first topic is required for branch minutes but absent from joint minutes', function () {
+    $organization = Organization::create(['external_code' => 'FIRST-TOPIC-SCOPE', 'name' => '第一议题区分测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $branch = readyMinute($user, $organization, 41);
+    $branch->update(['first_topic_content' => null]);
+    $this->actingAs($user)->post("/minutes/{$branch->id}/archive")
+        ->assertSessionHasErrors(['first_topic_content' => '第一议题学习内容未填写。']);
+
+    $jointScope = MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->firstOrFail();
+    $jointScope->organizations()->syncWithoutDetaching([$organization->id]);
+    RoleAssignment::create([
+        'user_id' => $user->id,
+        'role' => 'minute_submitter',
+        'meeting_type' => MeetingType::PartyGovernmentJoint,
+        'meeting_scope_id' => $jointScope->id,
+        'scope_key' => 'meeting:party_government_joint:scope:'.$jointScope->id,
+    ]);
+    $user = $user->fresh('roleAssignments');
+    $joint = readyMinute($user, $organization, 42);
+    $joint->update(['meeting_type' => MeetingType::PartyGovernmentJoint, 'meeting_scope_id' => $jointScope->id, 'first_topic_content' => null]);
+
+    $this->actingAs($user)->put("/minutes/{$joint->id}", ['lock_version' => 0, 'first_topic_content' => '不应写入联席会议'])
+        ->assertSessionHasErrors('first_topic_content');
+    expect($joint->fresh()->first_topic_content)->toBeNull();
+    $this->actingAs($user)->post("/minutes/{$joint->id}/archive")
+        ->assertSessionHasNoErrors();
+    expect($joint->fresh()->status)->toBe(MinuteStatus::Archived);
+    expect(array_key_exists('first_topic_content', $joint->versions()->firstOrFail()->snapshot['minute']))->toBeFalse();
+    $this->actingAs($user)->get("/minutes/{$joint->id}")->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('meetingType.value', MeetingType::PartyGovernmentJoint->value)->etc());
 });
 
 test('only a PDF meeting minute can be uploaded and used for archive', function () {
@@ -372,6 +405,7 @@ test('only a PDF meeting minute can be uploaded and used for archive', function 
         'title' => '会议纪要PDF测试',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
+        'first_topic_content' => '学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -437,7 +471,7 @@ test('a signed PDF can be uploaded from the new minute form without first saving
     $minute = MeetingMinute::sole();
     expect($minute->status)->toBe(MinuteStatus::Draft)
         ->and($minute->title)->toBe('填表过程中上传')
-        ->and($minute->first_topic_content)->toBeNull()
+        ->and($minute->first_topic_content)->toBe('已填写的学习内容')
         ->and($minute->remarks)->toBeNull()
         ->and($minute->participants()->value('display_name'))->toBe('主持甲')
         ->and($minute->files()->whereNull('version_no')->value('original_name'))->toBe('signed.pdf');
@@ -472,6 +506,7 @@ test('uploaded attachment is visible while archive validation errors are returne
         'title' => '附件展示测试',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
+        'first_topic_content' => '学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,
@@ -560,6 +595,7 @@ test('saving participant changes before archive makes the new roles available to
         'title' => '保存后归档测试',
         'meeting_start_at' => '2026-09-02 09:00:00',
         'meeting_end_at' => '2026-09-02 10:00:00',
+        'first_topic_content' => '学习内容',
         'status' => MinuteStatus::Draft,
         'created_by' => $user->id,
         'updated_by' => $user->id,

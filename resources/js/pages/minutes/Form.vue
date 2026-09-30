@@ -35,6 +35,10 @@ const form = useForm({
     title: props.minute?.title ?? '',
     meeting_start_at: minuteDateTimeInput(props.minute?.meeting_start_at),
     meeting_end_at: minuteDateTimeInput(props.minute?.meeting_end_at),
+    first_topic_content:
+        props.meetingType.value === 'party_branch'
+            ? (props.minute?.first_topic_content ?? '')
+            : '',
     lock_version: props.minute?.lock_version ?? 0,
     participants: props.minute?.participants ?? [],
 });
@@ -561,9 +565,31 @@ const upload = () => {
                     {{ participantError || page.props.errors?.participants }}
                 </p>
             </section>
-            <section class="form-card">
+            <section
+                v-if="meetingType.value === 'party_branch'"
+                class="form-card"
+            >
                 <div class="section-head">
                     <span>03</span>
+                    <div>
+                        <h2>第一议题学习内容</h2>
+                    </div>
+                </div>
+                <textarea
+                    v-model="form.first_topic_content"
+                    class="control min-h-56 resize-y leading-7"
+                    maxlength="20000"
+                    placeholder="请输入第一议题学习内容……"
+                />
+                <div class="mt-2 text-right text-xs text-[#8a918d]">
+                    {{ form.first_topic_content.length }} / 20,000
+                </div>
+            </section>
+            <section class="form-card">
+                <div class="section-head">
+                    <span>{{
+                        meetingType.value === 'party_branch' ? '04' : '03'
+                    }}</span>
                     <div>
                         <h2>
                             会议纪要
@@ -647,7 +673,9 @@ const upload = () => {
             </section>
             <section v-if="minute" class="form-card">
                 <div class="section-head">
-                    <span>04</span>
+                    <span>{{
+                        meetingType.value === 'party_branch' ? '05' : '04'
+                    }}</span>
                     <div>
                         <h2>归档时间</h2>
                         <p>正式归档时由系统自动记录，无需手动填写</p>

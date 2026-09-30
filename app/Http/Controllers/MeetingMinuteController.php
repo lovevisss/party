@@ -94,7 +94,7 @@ class MeetingMinuteController extends Controller
     {
         abort_if($request->user()->hasGlobalMinuteAccess(), 403);
         $type = $this->type($meetingType);
-        $data = $this->draftData($request);
+        $data = $this->draftData($request, $type);
         $request->validate(['attachment' => 'nullable|file|max:20480']);
         $attachment = $request->file('attachment');
         if ($attachment instanceof UploadedFile) {
@@ -158,7 +158,7 @@ class MeetingMinuteController extends Controller
     public function update(Request $request, MeetingMinute $minute, AuditService $audit): RedirectResponse
     {
         Gate::authorize('update', $minute);
-        $data = $this->draftData($request);
+        $data = $this->draftData($request, $minute->meeting_type);
         $lock = $request->validate(['lock_version' => 'required|integer|min:0'])['lock_version'];
         DB::transaction(function () use ($minute, $data, $lock, $request) {
             $affected = MeetingMinute::whereKey($minute->id)->where('lock_version', $lock)->whereIn('status', ['draft', 'returned'])->update([...$data, 'lock_version' => $lock + 1, 'updated_by' => $request->user()->id, 'updated_at' => now()]);
@@ -194,10 +194,10 @@ class MeetingMinuteController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function draftData(Request $request): array
+    private function draftData(Request $request, MeetingType $type): array
     {
         $data = $request->validate(
-            ['meeting_year' => 'nullable|integer|min:2000|max:2100', 'sequence_no' => 'nullable|integer|min:1|max:999', 'title' => 'nullable|string|max:200', 'meeting_start_at' => 'nullable|date', 'meeting_end_at' => 'nullable|date|after:meeting_start_at', 'participants' => 'array', 'participants.*.person_id' => 'nullable|exists:people,id', 'participants.*.role_type' => ['required', Rule::in(['chair', 'recorder', 'attendee', 'absent', 'observer'])], 'participants.*.display_name' => 'required|string|max:100', 'participants.*.is_external' => 'boolean'],
+            ['meeting_year' => 'nullable|integer|min:2000|max:2100', 'sequence_no' => 'nullable|integer|min:1|max:999', 'title' => 'nullable|string|max:200', 'meeting_start_at' => 'nullable|date', 'meeting_end_at' => 'nullable|date|after:meeting_start_at', 'first_topic_content' => $type === MeetingType::PartyBranch ? 'nullable|string|max:20000' : 'prohibited', 'participants' => 'array', 'participants.*.person_id' => 'nullable|exists:people,id', 'participants.*.role_type' => ['required', Rule::in(['chair', 'recorder', 'attendee', 'absent', 'observer'])], 'participants.*.display_name' => 'required|string|max:100', 'participants.*.is_external' => 'boolean'],
             [
                 'meeting_end_at.after' => '基本信息第 6 项“结束时间”必须晚于“开始时间”。',
                 'participants.*.person_id.exists' => '人员情况第 :position 行：所选人员不存在或已停用。',
@@ -211,6 +211,7 @@ class MeetingMinuteController extends Controller
                 'title' => '基本信息第 4 项“会议名称”',
                 'meeting_start_at' => '基本信息第 5 项“开始时间”',
                 'meeting_end_at' => '基本信息第 6 项“结束时间”',
+                'first_topic_content' => '第一议题学习内容',
                 'participants' => '人员情况',
             ],
         );
