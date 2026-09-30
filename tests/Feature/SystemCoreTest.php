@@ -328,6 +328,63 @@ test('administrator detail and downloads expose only the current archived versio
         ->assertInertia(fn (Assert $page) => $page->has('minute.versions', 2)->has('minute.files', 3));
 });
 
+test('system administrator returns a minute to its meeting list without opening an unauthorized detail', function () {
+    $organization = Organization::create(['external_code' => 'ADMIN-RETURN', 'name' => '管理员退回测试单位']);
+    $submitter = coreUser('minute_submitter', $organization);
+    $admin = coreUser('system_admin');
+    $minute = readyMinute($submitter, $organization, 43);
+    app(MinutesArchiveService::class)->archive($minute, $submitter, CarbonImmutable::parse('2026-09-07 12:00:00', 'Asia/Shanghai'));
+    $file = $minute->files()->firstOrFail();
+
+    $this->actingAs($admin)->from("/minutes/{$minute->id}")
+        ->post("/minutes/{$minute->id}/return", ['reason' => '签字内容需要修改'])
+        ->assertRedirect('/minutes/party-branch')
+        ->assertSessionHas('success', '纪要已退回修改。');
+
+    expect($minute->fresh()->status)->toBe(MinuteStatus::Returned);
+    $this->actingAs($admin)->get('/minutes/party-branch')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minutes.data', 0));
+    $this->actingAs($admin)->get("/minutes/{$minute->id}")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$file->id}")->assertForbidden();
+    $this->actingAs($submitter)->get("/minutes/{$minute->id}")->assertOk();
+    $this->actingAs($submitter)->get("/minutes/{$minute->id}/edit")->assertOk();
+});
+
+test('system administrator returns a joint minute to the joint meeting list', function () {
+    $organization = Organization::create(['external_code' => 'JOINT-RETURN', 'name' => '联席退回测试单位']);
+    $submitter = coreUser('minute_submitter', $organization);
+    $admin = coreUser('system_admin');
+    $jointScope = MeetingScope::where('meeting_type', MeetingType::PartyGovernmentJoint->value)->firstOrFail();
+    $minute = readyMinute($submitter, $organization, 44);
+    $minute->update(['meeting_type' => MeetingType::PartyGovernmentJoint, 'meeting_scope_id' => $jointScope->id, 'first_topic_content' => null]);
+    app(MinutesArchiveService::class)->archive($minute, $submitter, CarbonImmutable::parse('2026-09-07 12:00:00', 'Asia/Shanghai'));
+
+    $this->actingAs($admin)->post("/minutes/{$minute->id}/return", ['reason' => '请重新核对纪要'])
+        ->assertRedirect('/minutes/party-government-joint');
+    $this->actingAs($admin)->get('/minutes/party-government-joint')->assertOk();
+    expect($minute->fresh()->status)->toBe(MinuteStatus::Returned);
+});
+
+test('meeting manager remains on the detail after return and an unrelated user cannot return it', function () {
+    $manager = coreUser('minute_manager');
+    $organization = $manager->person->organization;
+    $submitter = coreUser('minute_submitter', $organization);
+    $unrelated = coreUser('minute_submitter', Organization::create(['external_code' => 'OTHER-RETURN', 'name' => '其他单位']));
+    $minute = readyMinute($submitter, $organization, 45);
+    app(MinutesArchiveService::class)->archive($minute, $submitter, CarbonImmutable::parse('2026-09-07 12:00:00', 'Asia/Shanghai'));
+
+    $this->actingAs($unrelated)->post("/minutes/{$minute->id}/return", ['reason' => '无权限退回'])
+        ->assertForbidden();
+    expect($minute->fresh()->status)->toBe(MinuteStatus::Archived);
+
+    $this->actingAs($manager)->from("/minutes/{$minute->id}")
+        ->post("/minutes/{$minute->id}/return", ['reason' => '请补充会议附件'])
+        ->assertRedirect("/minutes/{$minute->id}")
+        ->assertSessionHas('success', '纪要已退回修改。');
+    $this->actingAs($manager)->get("/minutes/{$minute->id}")->assertOk();
+    expect($minute->fresh()->status)->toBe(MinuteStatus::Returned);
+});
+
 test('system administrator role takes precedence over submitter role for drafts', function () {
     $organization = Organization::create(['external_code' => 'DUAL-ROLE', 'name' => '兼任角色单位']);
     $user = coreUser('minute_submitter', $organization);

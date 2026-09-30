@@ -37,6 +37,10 @@ class MinuteActionController extends Controller
         $data = $request->validate(['reason' => 'required|string|min:5|max:500']);
         $service->returnForCorrection($minute, $request->user(), $data['reason']);
 
+        if ($request->user()->isSystemAdmin()) {
+            return redirect()->route('minutes.type.index', $minute->meeting_type->slug())->with('success', '纪要已退回修改。');
+        }
+
         return back()->with('success', '纪要已退回修改。');
     }
 
