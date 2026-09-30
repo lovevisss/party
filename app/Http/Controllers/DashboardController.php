@@ -15,7 +15,7 @@ class DashboardController extends Controller
     {
         $user = $request->user();
         $q = MeetingMinute::query()->with('meetingScope');
-        if ($user->isSystemAdmin()) {
+        if ($user->hasGlobalMinuteAccess()) {
             $q->where('status', MinuteStatus::Archived->value);
         } else {
             $q->where(function ($access) use ($user): void {
@@ -40,10 +40,10 @@ class DashboardController extends Controller
             });
         }
 
-        $stats = $user->isSystemAdmin()
+        $stats = $user->hasGlobalMinuteAccess()
             ? ['total' => (clone $q)->count(), 'on_time' => (clone $q)->where('is_overdue', false)->count(), 'overdue' => (clone $q)->where('is_overdue', true)->count()]
             : ['total' => (clone $q)->count(), 'draft' => (clone $q)->where('status', 'draft')->count(), 'returned' => (clone $q)->where('status', 'returned')->count(), 'overdue' => (clone $q)->where('is_overdue', true)->count()];
 
-        return Inertia::render('Dashboard', ['stats' => $stats, 'isSystemAdmin' => $user->isSystemAdmin(), 'recent' => (clone $q)->latest('updated_at')->limit(6)->get()]);
+        return Inertia::render('Dashboard', ['stats' => $stats, 'isSystemAdmin' => $user->hasGlobalMinuteAccess(), 'recent' => (clone $q)->latest('updated_at')->limit(6)->get()]);
     }
 }

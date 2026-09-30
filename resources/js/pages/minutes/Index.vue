@@ -313,7 +313,8 @@ const pagination = computed(() =>
                     当前筛选条件下暂无纪要
                 </p>
                 <p class="text-xs text-[#87908b]">
-                    请尝试调整年度{{ isSystemAdmin ? '或' : '、状态或' }}{{ meetingType.scope_label }}筛选条件
+                    请尝试调整年度{{ isSystemAdmin ? '或' : '、状态或'
+                    }}{{ meetingType.scope_label }}筛选条件
                 </p>
             </div>
             <footer

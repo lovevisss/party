@@ -13,6 +13,7 @@ class PersonSearchController extends Controller
 {
     public function __invoke(Request $request, MeetingScopeService $scopes): JsonResponse
     {
+        abort_if($request->user()->isGlobalAdmin() && ! $request->user()->isSystemAdmin(), 403);
         $term = trim($request->string('q')->toString());
         $q = Person::with('organization:id,name,external_code')->where('status', 'active')->when($term !== '', fn ($builder) => $builder->where(fn ($x) => $x->where('name', 'like', "%$term%")->orWhere('employee_no', 'like', "%$term%")));
         $type = MeetingType::tryFrom($request->string('meeting_type')->toString());

@@ -11,6 +11,7 @@ import {
     LayoutDashboard,
     LogOut,
     ShieldCheck,
+    ShieldEllipsis,
     Users,
 } from 'lucide-vue-next';
 const props = defineProps<{ title: string; eyebrow?: string }>();
@@ -45,6 +46,11 @@ const links = computed(() => [
                   icon: CalendarDays,
               },
               { label: '审计日志', href: '/admin/audit-logs', icon: FileClock },
+              {
+                  label: '角色权限',
+                  href: '/admin/role-permissions',
+                  icon: ShieldEllipsis,
+              },
           ]
         : []),
 ]);

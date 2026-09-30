@@ -35,7 +35,7 @@ class MeetingMinuteController extends Controller
         $user = $request->user();
         abort_unless(in_array($type, $user->accessibleMeetingTypes(), true), 403);
         $query = MeetingMinute::query()->where('meeting_type', $type->value)->with(['participants', 'meetingScope'])->withCount('versions');
-        $canViewAll = $user->isSystemAdmin();
+        $canViewAll = $user->hasGlobalMinuteAccess();
         $managedScopeIds = $user->managedScopeIds($type);
         $ownScopeIds = $user->meetingScopeIds($type);
         if ($canViewAll) {
@@ -75,7 +75,7 @@ class MeetingMinuteController extends Controller
 
     public function create(Request $request, string $meetingType): Response
     {
-        abort_if($request->user()->isSystemAdmin(), 403);
+        abort_if($request->user()->hasGlobalMinuteAccess(), 403);
         $type = $this->type($meetingType);
         $scopeIds = $request->user()->meetingScopeIds($type);
         abort_unless(count($scopeIds) > 0, 403);
@@ -90,7 +90,7 @@ class MeetingMinuteController extends Controller
 
     public function store(Request $request, string $meetingType, AuditService $audit, MinuteFileService $files): RedirectResponse
     {
-        abort_if($request->user()->isSystemAdmin(), 403);
+        abort_if($request->user()->hasGlobalMinuteAccess(), 403);
         $type = $this->type($meetingType);
         $data = $this->draftData($request);
         $request->validate(['attachment' => 'nullable|file|max:20480']);
@@ -121,7 +121,7 @@ class MeetingMinuteController extends Controller
         Gate::authorize('view', $minute);
 
         $minute->load(['participants', 'meetingScope']);
-        if ($request->user()->isSystemAdmin()) {
+        if ($request->user()->hasGlobalMinuteAccess()) {
             $minute->load([
                 'versions' => fn ($query) => $query->where('version_no', $minute->current_version),
                 'files' => fn ($query) => $query->where('version_no', $minute->current_version),

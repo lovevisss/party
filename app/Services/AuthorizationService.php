@@ -21,6 +21,10 @@ class AuthorizationService
             throw ValidationException::withMessages(['person_id' => '停用人员不能新增授权。']);
         }
 
+        if (in_array($role, [UserRole::SystemAdmin, UserRole::GlobalAdmin], true)) {
+            $meetingType = null;
+        }
+
         [$scopeId, $scopeKey] = $this->scope($person, $role, $meetingType);
 
         return DB::transaction(function () use ($person, $role, $meetingType, $scopeId, $scopeKey, $grantedBy): RoleAssignment {
@@ -78,7 +82,7 @@ class AuthorizationService
     /** @return array{int|null,string} */
     private function scope(Person $person, UserRole $role, ?MeetingType $meetingType): array
     {
-        if ($role === UserRole::SystemAdmin) {
+        if (in_array($role, [UserRole::SystemAdmin, UserRole::GlobalAdmin], true)) {
             return [null, 'global'];
         }
         if (! $meetingType) {

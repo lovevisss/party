@@ -73,6 +73,16 @@ class User extends Authenticatable
         return $this->hasRole(UserRole::SystemAdmin->value);
     }
 
+    public function isGlobalAdmin(): bool
+    {
+        return $this->hasRole(UserRole::GlobalAdmin->value);
+    }
+
+    public function hasGlobalMinuteAccess(): bool
+    {
+        return $this->isSystemAdmin() || $this->isGlobalAdmin();
+    }
+
     public function manages(MeetingType $type, ?int $scopeId): bool
     {
         return $this->isSystemAdmin() || ($scopeId !== null && in_array($scopeId, $this->managedScopeIds($type), true));
@@ -107,7 +117,7 @@ class User extends Authenticatable
     /** @return list<MeetingType> */
     public function accessibleMeetingTypes(): array
     {
-        if ($this->isSystemAdmin()) {
+        if ($this->hasGlobalMinuteAccess()) {
             return MeetingType::cases();
         }
 

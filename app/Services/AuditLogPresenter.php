@@ -135,6 +135,7 @@ class AuditLogPresenter
             'minute_submitter' => '会议提交人',
             'minute_manager' => '纪要管理员',
             'system_admin' => '系统管理员',
+            'global_admin' => '全局管理员',
             default => '权限',
         };
         $scopeId = $assignment ? $assignment->meeting_scope_id : null;

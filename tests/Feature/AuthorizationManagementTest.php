@@ -128,8 +128,8 @@ test('downloaded xlsx template contains two sheets and required headers', functi
     unlink($path);
 
     expect($workbook)->toContain('授权名单')->toContain('填写说明')
-        ->and($strings)->toContain('工号/统一账号')->toContain('会议类型')->toContain('权限角色')
-        ->and($sheet)->toContain('dataValidations');
+        ->and($strings)->toContain('工号/统一账号')->toContain('会议类型')->toContain('权限角色')->toContain('全局管理员')
+        ->and($sheet)->toContain('dataValidations')->toContain('全局管理员');
 });
 
 test('new and legacy CSV formats both create valid previews', function () {

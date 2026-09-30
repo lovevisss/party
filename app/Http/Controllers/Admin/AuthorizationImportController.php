@@ -91,7 +91,8 @@ class AuthorizationImportController extends Controller
             $roleLabel = $newFormat ? $this->cell($row, $map, '权限角色') : ($this->cell($row, $map, '系统角色') ?: '学院提交人');
             $enabledLabel = $this->cell($row, $map, '启用状态');
             $role = $this->roleFromLabel($roleLabel);
-            $meetingType = $role === UserRole::SystemAdmin ? null : $this->typeFromLabel($typeLabel);
+            $globalRole = in_array($role, [UserRole::SystemAdmin, UserRole::GlobalAdmin], true);
+            $meetingType = $globalRole ? null : $this->typeFromLabel($typeLabel);
             $person = Person::with('organization')->where('employee_no', $employeeNo)->first();
             $lineErrors = [];
 
@@ -106,7 +107,7 @@ class AuthorizationImportController extends Controller
             }
             if (! $role) {
                 $lineErrors[] = '权限角色无效';
-            } elseif ($role !== UserRole::SystemAdmin && ! $meetingType) {
+            } elseif (! $globalRole && ! $meetingType) {
                 $lineErrors[] = '会议类型无效';
             }
             if (! in_array($enabledLabel, ['启用', '停用'], true)) {
@@ -138,7 +139,8 @@ class AuthorizationImportController extends Controller
                 abort_unless(is_array($item) && is_string($item['role'] ?? null), 422);
                 $person = Person::where('employee_no', $item['employee_no'])->where('status', 'active')->firstOrFail();
                 $role = UserRole::from($item['role']);
-                $meetingType = isset($item['meeting_type']) && $item['meeting_type'] ? MeetingType::from($item['meeting_type']) : ($role === UserRole::SystemAdmin ? null : MeetingType::PartyBranch);
+                $globalRole = in_array($role, [UserRole::SystemAdmin, UserRole::GlobalAdmin], true);
+                $meetingType = $globalRole ? null : (isset($item['meeting_type']) && $item['meeting_type'] ? MeetingType::from($item['meeting_type']) : MeetingType::PartyBranch);
                 if ($item['enabled']) {
                     $authorizations->grant($person, $role, $meetingType, $request->user()->id);
                 } else {
@@ -167,6 +169,7 @@ class AuthorizationImportController extends Controller
             '提交人', '会议提交人', '学院提交人', '组织员', '办公室主任' => UserRole::MinuteSubmitter,
             '会议管理员', '校级业务管理员' => UserRole::MinuteManager,
             '系统管理员' => UserRole::SystemAdmin,
+            '全局管理员' => UserRole::GlobalAdmin,
             default => null,
         };
     }

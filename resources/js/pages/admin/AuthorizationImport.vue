@@ -42,6 +42,7 @@ const filteredScopes = computed(() =>
 const roleLabels: Record<string, string> = {
     minute_submitter: '会议提交人',
     minute_manager: '会议管理员',
+    global_admin: '全局管理员',
     system_admin: '系统管理员',
 };
 const searchPeople = async () => {
@@ -61,8 +62,9 @@ const grant = () =>
         {
             person_id: selected.value.id,
             role: role.value,
-            meeting_type:
-                role.value === 'system_admin' ? null : meetingType.value,
+            meeting_type: ['system_admin', 'global_admin'].includes(role.value)
+                ? null
+                : meetingType.value,
         },
         { preserveScroll: true },
     );
@@ -96,6 +98,7 @@ const commit = (id: string) =>
     );
 const selectedScope = computed(() => {
     if (role.value === 'system_admin') return '全局系统权限';
+    if (role.value === 'global_admin') return '全局纪要只读';
     const sourceId = selected.value?.organization_id;
     return (
         props.organizations.find(
@@ -169,7 +172,9 @@ const selectedScope = computed(() => {
                             {{ selected.organization?.name }}
                         </p>
                     </div>
-                    <label v-if="role !== 'system_admin'" class="field"
+                    <label
+                        v-if="!['system_admin', 'global_admin'].includes(role)"
+                        class="field"
                         ><span>会议类型</span
                         ><select v-model="meetingType">
                             <option
@@ -186,6 +191,7 @@ const selectedScope = computed(() => {
                         ><select v-model="role">
                             <option value="minute_submitter">会议提交人</option>
                             <option value="minute_manager">会议管理员</option>
+                            <option value="global_admin">全局管理员</option>
                             <option value="system_admin">系统管理员</option>
                         </select></label
                     >
@@ -420,7 +426,9 @@ const selectedScope = computed(() => {
                             <td>
                                 {{
                                     assignment.meeting_scope?.name ||
-                                    (assignment.role === 'system_admin'
+                                    (['system_admin', 'global_admin'].includes(
+                                        assignment.role,
+                                    )
                                         ? '全局'
                                         : '未映射，需重新授权')
                                 }}

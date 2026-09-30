@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\AuthorizationController;
 use App\Http\Controllers\Admin\AuthorizationImportController;
 use App\Http\Controllers\Admin\PersonnelSyncController;
+use App\Http\Controllers\Admin\RolePermissionsController;
 use App\Http\Controllers\Admin\WorkdayController;
 use App\Http\Controllers\Auth\CasController;
 use App\Http\Controllers\DashboardController;
@@ -41,6 +42,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/minutes/{minute}/files/{file}', [MinuteActionController::class, 'download'])->whereUuid('minute')->name('minutes.files.download');
 
     Route::prefix('admin')->name('admin.')->middleware('role:system_admin')->group(function () {
+        Route::get('/role-permissions', RolePermissionsController::class)->name('role-permissions.index');
         Route::get('/personnel-sync', [PersonnelSyncController::class, 'index'])->name('personnel-sync.index');
         Route::post('/personnel-sync', [PersonnelSyncController::class, 'store'])->name('personnel-sync.store');
         Route::get('/authorization-import', [AuthorizationImportController::class, 'index'])->name('authorization-import.index');

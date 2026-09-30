@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { Archive, Clock3, FilePenLine, RotateCcw, FileCheck2 } from 'lucide-vue-next';
+import {
+    Archive,
+    Clock3,
+    FilePenLine,
+    RotateCcw,
+    FileCheck2,
+} from 'lucide-vue-next';
 import { computed } from 'vue';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
 import MinuteStatus from '@/components/MinuteStatus.vue';
-const props = defineProps<{ stats: Record<string, number>; recent: any[]; isSystemAdmin: boolean }>();
+const props = defineProps<{
+    stats: Record<string, number>;
+    recent: any[];
+    isSystemAdmin: boolean;
+}>();
 const typeLabels: Record<string, string> = {
     party_branch: '党总支会议纪要',
     party_government_joint: '党政联席会议纪要',
@@ -20,11 +30,14 @@ const adminCards = [
     { label: '按时归档', key: 'on_time', icon: FileCheck2 },
     { label: '逾期归档', key: 'overdue', icon: Clock3 },
 ];
-const cards = computed(() => props.isSystemAdmin ? adminCards : regularCards);
+const cards = computed(() => (props.isSystemAdmin ? adminCards : regularCards));
 </script>
 <template>
     <BusinessLayout title="工作台" eyebrow="今日概览"
-        ><section class="grid gap-4 sm:grid-cols-2" :class="isSystemAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-4'">
+        ><section
+            class="grid gap-4 sm:grid-cols-2"
+            :class="isSystemAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-4'"
+        >
             <div
                 v-for="(card, i) in cards"
                 :key="card.key"
@@ -53,7 +66,13 @@ const cards = computed(() => props.isSystemAdmin ? adminCards : regularCards);
             >
                 <div>
                     <h2 class="font-serif text-lg font-semibold">最近更新</h2>
-                    <p class="text-xs text-[#79827d]">{{ isSystemAdmin ? '仅显示当前终稿，按最后修改时间排列' : '按最后修改时间排列' }}</p>
+                    <p class="text-xs text-[#79827d]">
+                        {{
+                            isSystemAdmin
+                                ? '仅显示当前终稿，按最后修改时间排列'
+                                : '按最后修改时间排列'
+                        }}
+                    </p>
                 </div>
                 <Link href="/minutes" class="text-sm font-medium text-[#2f6a59]"
                     >查看全部 →</Link
