@@ -44,6 +44,9 @@ class MinuteActionController extends Controller
     {
         Gate::authorize('view', $minute);
         abort_unless($file->meeting_minute_id === $minute->id, 404);
+        if (request()->user()->isSystemAdmin()) {
+            abort_unless($file->version_no === $minute->current_version, 403);
+        }
 
         return Storage::disk(config('filesystems.default'))->download($file->object_key, $file->original_name);
     }

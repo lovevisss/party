@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\MinuteStatus;
 use App\Enums\UserRole;
 use App\Models\MeetingMinute;
 use App\Models\User;
@@ -15,6 +16,10 @@ class MeetingMinutePolicy
 
     public function view(User $user, MeetingMinute $minute): bool
     {
+        if ($user->isSystemAdmin()) {
+            return $minute->getRawOriginal('status') === MinuteStatus::Archived->value;
+        }
+
         $type = $minute->meeting_type;
 
         return $user->manages($type, $minute->meeting_scope_id)
@@ -24,12 +29,13 @@ class MeetingMinutePolicy
 
     public function create(User $user): bool
     {
-        return $user->hasRole(UserRole::MinuteSubmitter->value);
+        return ! $user->isSystemAdmin() && $user->hasRole(UserRole::MinuteSubmitter->value);
     }
 
     public function update(User $user, MeetingMinute $minute): bool
     {
-        return $user->hasRole(UserRole::MinuteSubmitter->value, $minute->meeting_type)
+        return ! $user->isSystemAdmin()
+            && $user->hasRole(UserRole::MinuteSubmitter->value, $minute->meeting_type)
             && $minute->created_by === $user->id
             && in_array($minute->meeting_scope_id, $user->meetingScopeIds($minute->meeting_type), true)
             && in_array($minute->getRawOriginal('status'), ['draft', 'returned']);
@@ -37,7 +43,7 @@ class MeetingMinutePolicy
 
     public function delete(User $user, MeetingMinute $minute): bool
     {
-        return $user->isSystemAdmin();
+        return $user->isSystemAdmin() && $minute->getRawOriginal('status') === MinuteStatus::Archived->value;
     }
 
     public function returnForCorrection(User $user, MeetingMinute $minute): bool

@@ -235,7 +235,7 @@ test('college submitter only sees and edits minutes created by themselves', func
     $this->actingAs($owner)->get("/minutes/{$colleagueMinute->id}/edit")->assertForbidden();
 });
 
-test('system administrator sees every minute but does not edit submitter drafts', function () {
+test('system administrator sees only archived minutes across organizations', function () {
     $organizationA = Organization::create(['external_code' => 'ALL-A', 'name' => '单位A']);
     $organizationB = Organization::create(['external_code' => 'ALL-B', 'name' => '单位B']);
     $submitterA = coreUser('minute_submitter', $organizationA);
@@ -243,15 +243,98 @@ test('system administrator sees every minute but does not edit submitter drafts'
     $admin = coreUser('system_admin');
 
     $minuteA = MeetingMinute::create(['organization_id' => $organizationA->id, 'meeting_type' => 'party_branch', 'status' => MinuteStatus::Draft, 'created_by' => $submitterA->id, 'updated_by' => $submitterA->id]);
-    $minuteB = MeetingMinute::create(['organization_id' => $organizationB->id, 'meeting_type' => 'party_branch', 'status' => MinuteStatus::Draft, 'created_by' => $submitterB->id, 'updated_by' => $submitterB->id]);
+    $minuteB = MeetingMinute::create(['organization_id' => $organizationB->id, 'meeting_type' => 'party_branch', 'status' => MinuteStatus::Archived, 'created_by' => $submitterB->id, 'updated_by' => $submitterB->id]);
 
     $this->actingAs($admin)->get('/minutes/party-branch')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('minutes/Index')
-        ->has('minutes.data', 2)
+        ->has('minutes.data', 1)
+        ->where('minutes.data.0.id', $minuteB->id)
         ->where('canCreate', false));
-    $this->actingAs($admin)->get("/minutes/{$minuteA->id}")->assertOk();
+    $this->actingAs($admin)->get("/minutes/{$minuteA->id}")->assertForbidden();
     $this->actingAs($admin)->get("/minutes/{$minuteB->id}")->assertOk();
     $this->actingAs($admin)->get("/minutes/{$minuteA->id}/edit")->assertForbidden();
+});
+
+test('administrator dashboard and meeting lists include only current archived minutes', function () {
+    $organization = Organization::create(['external_code' => 'ADMIN-VISIBILITY', 'name' => '终稿可见性单位']);
+    $submitter = coreUser('minute_submitter', $organization);
+    $admin = coreUser('system_admin');
+    $archived = MeetingMinute::create(['organization_id' => $organization->id, 'meeting_type' => 'party_branch', 'title' => '当前终稿', 'status' => MinuteStatus::Archived, 'is_overdue' => false, 'created_by' => $submitter->id, 'updated_by' => $submitter->id]);
+    $draft = MeetingMinute::create(['organization_id' => $organization->id, 'meeting_type' => 'party_branch', 'title' => '未完成草稿', 'status' => MinuteStatus::Draft, 'created_by' => $submitter->id, 'updated_by' => $submitter->id]);
+    $returned = MeetingMinute::create(['organization_id' => $organization->id, 'meeting_type' => 'party_government_joint', 'title' => '退回修改中', 'status' => MinuteStatus::Returned, 'is_overdue' => true, 'created_by' => $submitter->id, 'updated_by' => $submitter->id]);
+
+    $this->actingAs($admin)->get('/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('isSystemAdmin', true)
+        ->where('stats.total', 1)
+        ->where('stats.on_time', 1)
+        ->where('stats.overdue', 0)
+        ->missing('stats.draft')
+        ->missing('stats.returned')
+        ->has('recent', 1)
+        ->where('recent.0.id', $archived->id));
+    $this->actingAs($admin)->get('/minutes/party-branch?status=draft')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minutes.data', 0)->where('isSystemAdmin', true));
+    $this->actingAs($admin)->get('/minutes/party-government-joint?status=returned')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minutes.data', 0));
+    $this->actingAs($admin)->get('/minutes/party-branch')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minutes.data', 1)->where('minutes.data.0.id', $archived->id));
+    $this->actingAs($admin)->get("/minutes/{$draft->id}")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$returned->id}")->assertForbidden();
+    $this->actingAs($admin)->delete("/minutes/{$returned->id}")->assertForbidden();
+
+    $this->actingAs($submitter)->get('/minutes/party-branch')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minutes.data', 2)->where('isSystemAdmin', false));
+    $this->actingAs($submitter)->get("/minutes/{$draft->id}")->assertOk();
+});
+
+test('administrator detail and downloads expose only the current archived version', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'ADMIN-VERSION', 'name' => '终稿版本单位']);
+    $submitter = coreUser('minute_submitter', $organization);
+    $admin = coreUser('system_admin');
+    $minute = readyMinute($submitter, $organization, 41);
+    $service = app(MinutesArchiveService::class);
+    $service->archive($minute, $submitter, CarbonImmutable::parse('2026-09-07 12:00:00', 'Asia/Shanghai'));
+    $oldFile = $minute->files()->firstOrFail();
+    Storage::disk(config('filesystems.default'))->put($oldFile->object_key, 'old final');
+    $service->returnForCorrection($minute, $submitter, '签字内容需要调整');
+
+    $this->actingAs($admin)->get("/minutes/{$minute->id}")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$oldFile->id}")->assertForbidden();
+
+    $newFile = MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'current.pdf', 'object_key' => "minutes/{$minute->id}/current.pdf", 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('b', 64), 'uploaded_by' => $submitter->id]);
+    Storage::disk(config('filesystems.default'))->put($newFile->object_key, 'current final');
+    $service->archive($minute, $submitter, CarbonImmutable::parse('2026-09-09 12:00:00', 'Asia/Shanghai'));
+    $pendingFile = MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'pending.pdf', 'object_key' => "minutes/{$minute->id}/pending.pdf", 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('c', 64), 'uploaded_by' => $submitter->id]);
+    Storage::disk(config('filesystems.default'))->put($pendingFile->object_key, 'pending draft');
+
+    $this->actingAs($admin)->get("/minutes/{$minute->id}")->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('minute.versions', 1)
+        ->where('minute.versions.0.version_no', 2)
+        ->has('minute.files', 1)
+        ->where('minute.files.0.id', $newFile->id));
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$oldFile->id}")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$pendingFile->id}")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$newFile->id}")->assertOk();
+    $this->actingAs($submitter)->get("/minutes/{$minute->id}")->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minute.versions', 2)->has('minute.files', 3));
+});
+
+test('system administrator role takes precedence over submitter role for drafts', function () {
+    $organization = Organization::create(['external_code' => 'DUAL-ROLE', 'name' => '兼任角色单位']);
+    $user = coreUser('minute_submitter', $organization);
+    RoleAssignment::create(['user_id' => $user->id, 'role' => 'system_admin', 'scope_key' => 'global']);
+    $minute = MeetingMinute::create(['organization_id' => $organization->id, 'meeting_type' => 'party_branch', 'status' => MinuteStatus::Draft, 'created_by' => $user->id, 'updated_by' => $user->id]);
+
+    $this->actingAs($user)->get('/minutes/party-branch')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->has('minutes.data', 0)->where('canCreate', false));
+    $this->actingAs($user)->get('/minutes/party-branch/create')->assertForbidden();
+    $this->actingAs($user)->post('/minutes/party-branch', [])->assertForbidden();
+    $this->actingAs($user)->get("/minutes/{$minute->id}")->assertForbidden();
+    $this->actingAs($user)->get("/minutes/{$minute->id}/edit")->assertForbidden();
+    $this->actingAs($user)->put("/minutes/{$minute->id}", [])->assertForbidden();
+    $this->actingAs($user)->post("/minutes/{$minute->id}/attachment", [])->assertForbidden();
+    $this->actingAs($user)->post("/minutes/{$minute->id}/archive")->assertForbidden();
 });
 
 test('archive creates immutable version and fixes due date', function () {
@@ -443,7 +526,7 @@ test('only a system administrator can delete an existing minute while preserving
     expect($replacement->id)->not->toBe($minute->id);
 });
 
-test('system administrator can delete a draft from the joint meeting list', function () {
+test('system administrator cannot delete a draft from the joint meeting list', function () {
     $organization = Organization::create(['external_code' => 'DELETE-JOINT', 'name' => '联席删除测试单位']);
     $admin = coreUser('system_admin');
     $minute = MeetingMinute::create([
@@ -456,9 +539,8 @@ test('system administrator can delete a draft from the joint meeting list', func
     ]);
 
     $this->actingAs($admin)->delete("/minutes/{$minute->id}")
-        ->assertRedirect('/minutes/party-government-joint');
-    expect(MeetingMinute::whereKey($minute->id)->exists())->toBeFalse()
-        ->and(MeetingMinute::withTrashed()->whereKey($minute->id)->exists())->toBeTrue();
+        ->assertForbidden();
+    expect(MeetingMinute::whereKey($minute->id)->exists())->toBeTrue();
 });
 
 test('saving participant changes before archive makes the new roles available to archive', function () {

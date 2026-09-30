@@ -38,7 +38,9 @@ class MeetingMinuteController extends Controller
         $canViewAll = $user->isSystemAdmin();
         $managedScopeIds = $user->managedScopeIds($type);
         $ownScopeIds = $user->meetingScopeIds($type);
-        if (! $canViewAll) {
+        if ($canViewAll) {
+            $query->where('status', MinuteStatus::Archived->value);
+        } else {
             $query->where(function ($visible) use ($user, $managedScopeIds, $ownScopeIds): void {
                 $visible->whereIn('meeting_scope_id', $managedScopeIds)
                     ->orWhere(fn ($own) => $own->where('created_by', $user->id)->whereIn('meeting_scope_id', $ownScopeIds));
@@ -66,12 +68,14 @@ class MeetingMinuteController extends Controller
             'organizations' => $scopes,
             'meetingType' => $this->typePayload($type),
             'filters' => $request->only(['meeting_scope_id', 'year', 'status', 'overdue', 'per_page']),
-            'canCreate' => count($user->meetingScopeIds($type)) > 0,
+            'canCreate' => ! $canViewAll && count($user->meetingScopeIds($type)) > 0,
+            'isSystemAdmin' => $canViewAll,
         ]);
     }
 
     public function create(Request $request, string $meetingType): Response
     {
+        abort_if($request->user()->isSystemAdmin(), 403);
         $type = $this->type($meetingType);
         $scopeIds = $request->user()->meetingScopeIds($type);
         abort_unless(count($scopeIds) > 0, 403);
@@ -86,6 +90,7 @@ class MeetingMinuteController extends Controller
 
     public function store(Request $request, string $meetingType, AuditService $audit, MinuteFileService $files): RedirectResponse
     {
+        abort_if($request->user()->isSystemAdmin(), 403);
         $type = $this->type($meetingType);
         $data = $this->draftData($request);
         $request->validate(['attachment' => 'nullable|file|max:20480']);
@@ -111,11 +116,21 @@ class MeetingMinuteController extends Controller
         return redirect()->route('minutes.edit', $minute)->with('success', $attachment instanceof UploadedFile ? '会议纪要已上传，草稿已自动保存。' : '草稿已保存。');
     }
 
-    public function show(MeetingMinute $minute): Response
+    public function show(Request $request, MeetingMinute $minute): Response
     {
         Gate::authorize('view', $minute);
 
-        return Inertia::render('minutes/Show', ['minute' => $minute->load(['participants', 'versions', 'files', 'returns', 'meetingScope']), 'meetingType' => $this->typePayload($minute->meeting_type), 'canDelete' => Gate::allows('delete', $minute), 'canReturn' => Gate::allows('returnForCorrection', $minute)]);
+        $minute->load(['participants', 'meetingScope']);
+        if ($request->user()->isSystemAdmin()) {
+            $minute->load([
+                'versions' => fn ($query) => $query->where('version_no', $minute->current_version),
+                'files' => fn ($query) => $query->where('version_no', $minute->current_version),
+            ]);
+        } else {
+            $minute->load(['versions', 'files', 'returns']);
+        }
+
+        return Inertia::render('minutes/Show', ['minute' => $minute, 'meetingType' => $this->typePayload($minute->meeting_type), 'canDelete' => Gate::allows('delete', $minute), 'canReturn' => Gate::allows('returnForCorrection', $minute)]);
     }
 
     public function edit(Request $request, MeetingMinute $minute): Response

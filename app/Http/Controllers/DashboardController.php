@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\MeetingType;
+use App\Enums\MinuteStatus;
 use App\Models\MeetingMinute;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,7 +15,9 @@ class DashboardController extends Controller
     {
         $user = $request->user();
         $q = MeetingMinute::query()->with('meetingScope');
-        if (! $user->isSystemAdmin()) {
+        if ($user->isSystemAdmin()) {
+            $q->where('status', MinuteStatus::Archived->value);
+        } else {
             $q->where(function ($access) use ($user): void {
                 $hasCondition = false;
                 foreach (MeetingType::cases() as $type) {
@@ -37,6 +40,10 @@ class DashboardController extends Controller
             });
         }
 
-        return Inertia::render('Dashboard', ['stats' => ['total' => (clone $q)->count(), 'draft' => (clone $q)->where('status', 'draft')->count(), 'returned' => (clone $q)->where('status', 'returned')->count(), 'overdue' => (clone $q)->where('is_overdue', true)->count()], 'recent' => (clone $q)->latest('updated_at')->limit(6)->get()]);
+        $stats = $user->isSystemAdmin()
+            ? ['total' => (clone $q)->count(), 'on_time' => (clone $q)->where('is_overdue', false)->count(), 'overdue' => (clone $q)->where('is_overdue', true)->count()]
+            : ['total' => (clone $q)->count(), 'draft' => (clone $q)->where('status', 'draft')->count(), 'returned' => (clone $q)->where('status', 'returned')->count(), 'overdue' => (clone $q)->where('is_overdue', true)->count()];
+
+        return Inertia::render('Dashboard', ['stats' => $stats, 'isSystemAdmin' => $user->isSystemAdmin(), 'recent' => (clone $q)->latest('updated_at')->limit(6)->get()]);
     }
 }

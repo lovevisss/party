@@ -42,6 +42,7 @@ const props = defineProps<{
     organizations: { id: string; name: string }[];
     filters: Filters;
     canCreate: boolean;
+    isSystemAdmin: boolean;
     meetingType: {
         value: string;
         slug: string;
@@ -53,7 +54,7 @@ const props = defineProps<{
 const normalizeFilters = (filters: Filters) => ({
     ...filters,
     year: filters.year ?? '',
-    status: filters.status ?? '',
+    status: props.isSystemAdmin ? '' : (filters.status ?? ''),
     meeting_scope_id: filters.meeting_scope_id ?? '',
     overdue: filters.overdue == null ? '' : String(filters.overdue),
 });
@@ -135,7 +136,7 @@ const pagination = computed(() =>
                     placeholder="全部年度"
                 />
             </label>
-            <label class="field">
+            <label v-if="!isSystemAdmin" class="field">
                 <span>状态</span>
                 <select v-model="filter.status">
                     <option value="">全部状态</option>
@@ -312,7 +313,7 @@ const pagination = computed(() =>
                     当前筛选条件下暂无纪要
                 </p>
                 <p class="text-xs text-[#87908b]">
-                    请尝试调整年度、状态或{{ meetingType.scope_label }}筛选条件
+                    请尝试调整年度{{ isSystemAdmin ? '或' : '、状态或' }}{{ meetingType.scope_label }}筛选条件
                 </p>
             </div>
             <footer
