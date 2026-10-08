@@ -519,6 +519,54 @@ test('a PDF larger than the common 2 MB PHP default remains valid under the 20 M
     Storage::disk(config('filesystems.default'))->assertExists($file->object_key);
 });
 
+test('a draft owner can delete an unarchived attachment and its stored file', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'DELETE-PENDING', 'name' => '草稿附件测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $minute = readyMinute($user, $organization, 23);
+    $file = $minute->files()->sole();
+    $remaining = MinuteFile::create([
+        'meeting_minute_id' => $minute->id,
+        'original_name' => 'remaining.pdf',
+        'object_key' => "minutes/{$minute->id}/remaining.pdf",
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 8,
+        'sha256' => str_repeat('b', 64),
+        'uploaded_by' => $user->id,
+    ]);
+    Storage::disk(config('filesystems.default'))->put($file->object_key, '%PDF-1.7');
+    Storage::disk(config('filesystems.default'))->put($remaining->object_key, '%PDF-1.7');
+
+    $this->actingAs($user)->delete("/minutes/{$minute->id}/files/{$file->id}")
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($minute->files()->pluck('id')->all())->toBe([$remaining->id]);
+    Storage::disk(config('filesystems.default'))->assertMissing($file->object_key);
+    Storage::disk(config('filesystems.default'))->assertExists($remaining->object_key);
+});
+
+test('draft attachment deletion rejects other minutes and non-draft or archived files', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'DELETE-SCOPE', 'name' => '附件删除权限测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $minute = readyMinute($user, $organization, 24);
+    $other = readyMinute($user, $organization, 25);
+    $file = $minute->files()->sole();
+    $otherFile = $other->files()->sole();
+    Storage::disk(config('filesystems.default'))->put($file->object_key, '%PDF-1.7');
+
+    $this->actingAs($user)->delete("/minutes/{$minute->id}/files/{$otherFile->id}")->assertNotFound();
+    $file->update(['version_no' => 1]);
+    $this->actingAs($user)->delete("/minutes/{$minute->id}/files/{$file->id}")->assertNotFound();
+    $file->update(['version_no' => null]);
+    $minute->update(['status' => MinuteStatus::Returned]);
+    $this->actingAs($user)->delete("/minutes/{$minute->id}/files/{$file->id}")->assertForbidden();
+
+    expect($file->fresh())->not->toBeNull();
+    Storage::disk(config('filesystems.default'))->assertExists($file->object_key);
+});
+
 test('PHP upload limit rejection is visible to the user and recorded for operators', function () {
     $organization = Organization::create(['external_code' => 'PHP-LIMIT', 'name' => '上传限制测试单位']);
     $user = coreUser('minute_submitter', $organization);

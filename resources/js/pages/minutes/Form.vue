@@ -48,6 +48,7 @@ const attachmentForm = useForm<{ attachment: File | null }>({
 const page = usePage<{ errors: Record<string, string> }>();
 const archiving = ref(false);
 const uploading = ref(false);
+const deletingFileId = ref<string | null>(null);
 const attachmentInput = ref<HTMLInputElement | null>(null);
 const archiveError = ref('');
 const participantError = ref('');
@@ -334,6 +335,30 @@ const upload = () => {
         onSuccess: () => attachmentForm.reset(),
         onHttpException: uploadHttpError,
         onNetworkError: uploadNetworkError,
+    });
+};
+const deletePendingFile = (file: any) => {
+    if (
+        !props.minute ||
+        props.minute.status !== 'draft' ||
+        deletingFileId.value ||
+        !confirm(`确认删除“${file.original_name}”吗？`)
+    )
+        return;
+    deletingFileId.value = file.id;
+    attachmentForm.clearErrors();
+    router.delete(`/minutes/${props.minute.id}/files/${file.id}`, {
+        preserveScroll: true,
+        preserveState: true,
+        onError: (errors) => {
+            attachmentForm.setError(
+                'attachment',
+                errors.attachment || '附件删除失败，请稍后重试。',
+            );
+        },
+        onFinish: () => {
+            deletingFileId.value = null;
+        },
     });
 };
 </script>
@@ -634,7 +659,7 @@ const upload = () => {
                         /><button
                             type="button"
                             class="btn-secondary sm:ml-auto"
-                            :disabled="attachmentForm.processing || uploading"
+                            :disabled="attachmentForm.processing || uploading || deletingFileId !== null"
                             @click="openAttachmentPicker"
                         >
                             {{
@@ -666,19 +691,36 @@ const upload = () => {
                         >
                             <FileCheck2 :size="17" />已上传、待归档的会议纪要
                         </div>
-                        <Link
+                        <div
                             v-for="file in pendingFiles"
                             :key="file.id"
-                            :href="`/minutes/${minute.id}/files/${file.id}`"
-                            class="flex items-center gap-2 px-4 py-3 text-sm text-[#2f6a59] hover:bg-white"
-                            ><Download :size="15" />{{ file.original_name
-                            }}<span class="ml-auto text-xs text-[#77827c]"
-                                >{{
-                                    (file.size_bytes / 1024).toFixed(1)
-                                }}
-                                KB</span
-                            ></Link
+                            class="flex items-center gap-3 px-4 py-3 text-sm text-[#2f6a59] hover:bg-white"
                         >
+                            <Link
+                                :href="`/minutes/${minute.id}/files/${file.id}`"
+                                class="flex min-w-0 flex-1 items-center gap-2"
+                                ><Download :size="15" class="shrink-0" /><span
+                                    class="truncate"
+                                    >{{ file.original_name }}</span
+                                ><span
+                                    class="ml-auto shrink-0 text-xs text-[#77827c]"
+                                    >{{
+                                        (file.size_bytes / 1024).toFixed(1)
+                                    }}
+                                    KB</span
+                                ></Link
+                            >
+                            <button
+                                v-if="minute.status === 'draft'"
+                                type="button"
+                                class="inline-flex shrink-0 items-center gap-1 text-red-700 hover:text-red-900 disabled:opacity-50"
+                                :disabled="deletingFileId !== null"
+                                :aria-label="`删除附件 ${file.original_name}`"
+                                @click="deletePendingFile(file)"
+                            >
+                                <Trash2 :size="15" />删除
+                            </button>
+                        </div>
                     </div>
                     <p
                         v-if="minute && !hasPendingPdf"
@@ -721,7 +763,7 @@ const upload = () => {
                 <button
                     type="submit"
                     class="btn-secondary"
-                    :disabled="form.processing || archiving || uploading"
+                    :disabled="form.processing || archiving || uploading || deletingFileId !== null"
                 >
                     <Save :size="16" />{{
                         form.processing ? '正在保存…' : '保存草稿'
@@ -734,7 +776,8 @@ const upload = () => {
                         archiving ||
                         form.processing ||
                         attachmentForm.processing ||
-                        uploading
+                        uploading ||
+                        deletingFileId !== null
                     "
                     @click="archive"
                 >

@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MinuteStatus;
 use App\Models\MeetingMinute;
 use App\Models\MinuteFile;
 use App\Services\MinuteFileService;
 use App\Services\MinutesArchiveService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MinuteActionController extends Controller
@@ -21,6 +24,26 @@ class MinuteActionController extends Controller
         $files->store($minute, $attachment, $request->user());
 
         return back()->with('success', '会议纪要已上传。');
+    }
+
+    public function destroyFile(MeetingMinute $minute, MinuteFile $file): RedirectResponse
+    {
+        DB::transaction(function () use ($minute, $file): void {
+            $minute = MeetingMinute::whereKey($minute->id)->lockForUpdate()->firstOrFail();
+            Gate::authorize('update', $minute);
+            abort_unless($minute->getRawOriginal('status') === MinuteStatus::Draft->value, 403);
+
+            $file = $minute->files()->whereKey($file->id)
+                ->whereNull('version_no')->whereNull('minute_version_id')
+                ->lockForUpdate()->firstOrFail();
+            $disk = Storage::disk(config('filesystems.default'));
+            if ($disk->exists($file->object_key) && ! $disk->delete($file->object_key)) {
+                throw ValidationException::withMessages(['attachment' => '附件删除失败，请稍后重试。']);
+            }
+            $file->delete();
+        });
+
+        return back()->with('success', '待归档附件已删除。');
     }
 
     public function archive(Request $request, MeetingMinute $minute, MinutesArchiveService $service): RedirectResponse
