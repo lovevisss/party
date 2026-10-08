@@ -19,6 +19,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -500,6 +501,49 @@ test('only a PDF meeting minute can be uploaded and used for archive', function 
 
     expect($minute->fresh()->status)->toBe(MinuteStatus::Archived)
         ->and($minute->files()->where('version_no', 1)->value('original_name'))->toBe('signed.pdf');
+});
+
+test('a PDF larger than the common 2 MB PHP default remains valid under the 20 MB app limit', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'LARGE-PDF', 'name' => '大附件测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $minute = readyMinute($user, $organization, 21);
+    $content = "%PDF-1.7\n".str_repeat('x', 2_443_255);
+
+    $this->actingAs($user)->post("/minutes/{$minute->id}/attachment", [
+        'attachment' => UploadedFile::fake()->createWithContent('2026-014会议纪要.pdf', $content),
+    ])->assertSessionHasNoErrors();
+
+    $file = $minute->files()->where('original_name', '2026-014会议纪要.pdf')->firstOrFail();
+    expect($file->size_bytes)->toBe(strlen($content));
+    Storage::disk(config('filesystems.default'))->assertExists($file->object_key);
+});
+
+test('PHP upload limit rejection is visible to the user and recorded for operators', function () {
+    $organization = Organization::create(['external_code' => 'PHP-LIMIT', 'name' => '上传限制测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $minute = readyMinute($user, $organization, 22);
+    $source = UploadedFile::fake()->createWithContent('source.pdf', '%PDF-1.7');
+    $rejected = new UploadedFile($source->getPathname(), 'source.pdf', 'application/pdf', UPLOAD_ERR_INI_SIZE, true);
+    Log::spy();
+
+    $this->actingAs($user)->post("/minutes/{$minute->id}/attachment", ['attachment' => $rejected])
+        ->assertSessionHasErrors(['attachment' => '服务器单文件上传限制低于附件大小，请联系管理员调整上传配置。']);
+
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn ($message, $context) => $message === '会议纪要附件被 PHP 拒绝' && $context['upload_error'] === UPLOAD_ERR_INI_SIZE
+    );
+    expect($minute->files()->count())->toBe(1);
+});
+
+test('oversized upload requests rejected before controller execution are logged', function () {
+    Log::spy();
+
+    $this->withServerVariables(['CONTENT_LENGTH' => (string) (25 * 1024 * 1024)])
+        ->post('/minutes/party-branch', [])
+        ->assertStatus(413);
+
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn ($message, $context) => $message === '请求体超过 PHP 上传限制' && $context['path'] === 'minutes/party-branch'
+    );
 });
 
 test('a signed PDF can be uploaded from the new minute form without first saving a draft', function () {

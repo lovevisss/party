@@ -95,8 +95,7 @@ class MeetingMinuteController extends Controller
         abort_if($request->user()->hasGlobalMinuteAccess(), 403);
         $type = $this->type($meetingType);
         $data = $this->draftData($request, $type);
-        $request->validate(['attachment' => 'nullable|file|max:20480']);
-        $attachment = $request->file('attachment');
+        $attachment = $files->validatedUpload($request, false);
         if ($attachment instanceof UploadedFile) {
             $files->validateUpload($attachment);
         }

@@ -278,6 +278,19 @@ const chooseAttachment = (event: Event) => {
     if (attachmentForm.attachment) upload();
 };
 const openAttachmentPicker = () => attachmentInput.value?.click();
+const uploadHttpError = (response: { status: number }) => {
+    attachmentForm.setError(
+        'attachment',
+        response.status === 413
+            ? '服务器拒绝了该附件：请求大小超过服务器上传限制，请联系管理员调整上传配置。'
+            : `附件上传失败（HTTP ${response.status}），请稍后重试或联系管理员。`,
+    );
+    return false;
+};
+const uploadNetworkError = () => {
+    attachmentForm.setError('attachment', '附件上传时网络连接中断，请检查网络后重试。');
+    return false;
+};
 const upload = () => {
     if (
         !attachmentForm.attachment ||
@@ -306,6 +319,8 @@ const upload = () => {
                             );
                     });
                 },
+                onHttpException: uploadHttpError,
+                onNetworkError: uploadNetworkError,
                 onFinish: () => {
                     uploading.value = false;
                 },
@@ -317,6 +332,8 @@ const upload = () => {
         forceFormData: true,
         preserveScroll: true,
         onSuccess: () => attachmentForm.reset(),
+        onHttpException: uploadHttpError,
+        onNetworkError: uploadNetworkError,
     });
 };
 </script>

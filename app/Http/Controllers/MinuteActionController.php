@@ -17,8 +17,8 @@ class MinuteActionController extends Controller
     public function upload(Request $request, MeetingMinute $minute, MinuteFileService $files): RedirectResponse
     {
         Gate::authorize('update', $minute);
-        $request->validate(['attachment' => 'required|file|max:20480']);
-        $files->store($minute, $request->file('attachment'), $request->user());
+        $attachment = $files->validatedUpload($request);
+        $files->store($minute, $attachment, $request->user());
 
         return back()->with('success', '会议纪要已上传。');
     }
