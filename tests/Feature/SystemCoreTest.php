@@ -296,6 +296,29 @@ test('administrator dashboard and meeting lists include only current archived mi
     $this->actingAs($submitter)->get("/minutes/{$draft->id}")->assertOk();
 });
 
+test('on-time dashboard detail includes archived minutes across meeting types', function () {
+    $organization = Organization::create(['external_code' => 'ON-TIME-DETAIL', 'name' => '按时归档明细单位']);
+    $submitter = coreUser('minute_submitter', $organization);
+    $admin = coreUser('system_admin');
+    $common = ['organization_id' => $organization->id, 'meeting_year' => 2026, 'current_version' => 1, 'created_by' => $submitter->id, 'updated_by' => $submitter->id];
+    $branch = MeetingMinute::create([...$common, 'meeting_type' => MeetingType::PartyBranch, 'title' => '党总支按时纪要', 'sequence_no' => 1, 'status' => MinuteStatus::Archived, 'is_overdue' => false, 'archived_at' => '2026-10-08 10:00:00']);
+    $joint = MeetingMinute::create([...$common, 'meeting_type' => MeetingType::PartyGovernmentJoint, 'title' => '党政联席按时纪要', 'sequence_no' => 2, 'status' => MinuteStatus::Archived, 'is_overdue' => false, 'archived_at' => '2026-10-08 11:00:00']);
+    MeetingMinute::create([...$common, 'meeting_type' => MeetingType::PartyBranch, 'title' => '逾期纪要', 'sequence_no' => 3, 'status' => MinuteStatus::Archived, 'is_overdue' => true, 'archived_at' => '2026-10-08 12:00:00']);
+    MeetingMinute::create([...$common, 'meeting_type' => MeetingType::PartyBranch, 'title' => '草稿纪要', 'sequence_no' => 4, 'status' => MinuteStatus::Draft, 'is_overdue' => false]);
+
+    $this->get('/dashboard/on-time')->assertRedirect('/auth/cas/login');
+    $this->actingAs($admin)->get('/dashboard')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('stats.on_time', 2)->etc());
+    $this->actingAs($admin)->get('/dashboard/on-time')->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('DashboardOnTime')
+            ->where('minutes.total', 2)
+            ->has('minutes.data', 2)
+            ->where('minutes.data.0.id', $joint->id)
+            ->where('minutes.data.1.id', $branch->id));
+    $this->actingAs($submitter)->get('/dashboard/on-time')->assertForbidden();
+});
+
 test('administrator detail and downloads expose only the current archived version', function () {
     Storage::fake(config('filesystems.default'));
     $organization = Organization::create(['external_code' => 'ADMIN-VERSION', 'name' => '终稿版本单位']);
@@ -310,6 +333,7 @@ test('administrator detail and downloads expose only the current archived versio
 
     $this->actingAs($admin)->get("/minutes/{$minute->id}")->assertForbidden();
     $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$oldFile->id}")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$oldFile->id}/preview")->assertForbidden();
 
     $newFile = MinuteFile::create(['meeting_minute_id' => $minute->id, 'original_name' => 'current.pdf', 'object_key' => "minutes/{$minute->id}/current.pdf", 'mime_type' => 'application/pdf', 'size_bytes' => 10, 'sha256' => str_repeat('b', 64), 'uploaded_by' => $submitter->id]);
     Storage::disk(config('filesystems.default'))->put($newFile->object_key, 'current final');
@@ -324,9 +348,64 @@ test('administrator detail and downloads expose only the current archived versio
         ->where('minute.files.0.id', $newFile->id));
     $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$oldFile->id}")->assertForbidden();
     $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$pendingFile->id}")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$oldFile->id}/preview")->assertForbidden();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$pendingFile->id}/preview")->assertForbidden();
     $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$newFile->id}")->assertOk();
+    $this->actingAs($admin)->get("/minutes/{$minute->id}/files/{$newFile->id}/preview")->assertOk();
     $this->actingAs($submitter)->get("/minutes/{$minute->id}")->assertOk()
         ->assertInertia(fn (Assert $page) => $page->has('minute.versions', 2)->has('minute.files', 3));
+});
+
+test('PDF preview opens inline while download remains an attachment', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'PDF-PREVIEW', 'name' => '附件预览测试单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $minute = readyMinute($user, $organization, 46);
+    $file = $minute->files()->sole();
+    Storage::disk(config('filesystems.default'))->put($file->object_key, "%PDF-1.7\npreview");
+    $previewUrl = "/minutes/{$minute->id}/files/{$file->id}/preview";
+    $downloadUrl = "/minutes/{$minute->id}/files/{$file->id}";
+
+    $this->get($previewUrl)->assertRedirect('/auth/cas/login');
+    $preview = $this->actingAs($user)->get($previewUrl)->assertOk()
+        ->assertHeader('Content-Type', 'application/pdf')
+        ->assertHeader('Cache-Control', 'no-store, private');
+    expect($preview->headers->get('Content-Disposition'))->toStartWith('inline;');
+
+    $download = $this->actingAs($user)->get($downloadUrl)->assertOk();
+    expect($download->headers->get('Content-Disposition'))->toStartWith('attachment;');
+});
+
+test('PDF preview rejects unrelated, non-PDF, and missing attachments', function () {
+    Storage::fake(config('filesystems.default'));
+    $organization = Organization::create(['external_code' => 'PREVIEW-SCOPE', 'name' => '附件预览权限单位']);
+    $otherOrganization = Organization::create(['external_code' => 'PREVIEW-OTHER', 'name' => '其他预览权限单位']);
+    $user = coreUser('minute_submitter', $organization);
+    $otherUser = coreUser('minute_submitter', $otherOrganization);
+    $minute = readyMinute($user, $organization, 47);
+    $otherMinute = readyMinute($user, $organization, 48);
+    $file = $minute->files()->sole();
+    $previewUrl = "/minutes/{$minute->id}/files/{$file->id}/preview";
+    Storage::disk(config('filesystems.default'))->put($file->object_key, '%PDF-1.7');
+
+    $this->actingAs($otherUser)->get($previewUrl)->assertForbidden();
+    $this->actingAs($user)->get("/minutes/{$otherMinute->id}/files/{$file->id}/preview")->assertNotFound();
+
+    $legacy = MinuteFile::create([
+        'meeting_minute_id' => $minute->id,
+        'original_name' => 'legacy.docx',
+        'object_key' => "minutes/{$minute->id}/legacy.docx",
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 4,
+        'sha256' => str_repeat('d', 64),
+        'uploaded_by' => $user->id,
+    ]);
+    Storage::disk(config('filesystems.default'))->put($legacy->object_key, 'docx');
+    $this->actingAs($user)->get("/minutes/{$minute->id}/files/{$legacy->id}/preview")->assertNotFound();
+    $this->actingAs($user)->get("/minutes/{$minute->id}/files/{$legacy->id}")->assertOk();
+
+    Storage::disk(config('filesystems.default'))->delete($file->object_key);
+    $this->actingAs($user)->get($previewUrl)->assertNotFound();
 });
 
 test('system administrator returns a minute to its meeting list without opening an unauthorized detail', function () {

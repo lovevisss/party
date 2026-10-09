@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { Download, Printer, RotateCcw, Trash2 } from 'lucide-vue-next';
+import { Download, Eye, Printer, RotateCcw, Trash2 } from 'lucide-vue-next';
 import BusinessLayout from '@/layouts/BusinessLayout.vue';
 import MinuteStatus from '@/components/MinuteStatus.vue';
 import { minuteDateTime, minuteMeetingRange } from '@/lib/minuteDateTime';
@@ -17,6 +17,9 @@ const sendBack = () => {
     if (reason) router.post(`/minutes/${props.minute.id}/return`, { reason });
 };
 const printPage = () => window.print();
+const canPreview = (file: any) =>
+    file.mime_type === 'application/pdf' &&
+    file.object_key?.toLowerCase().endsWith('.pdf');
 const remove = () => {
     if (
         !confirm(
@@ -155,14 +158,33 @@ const role: Record<string, string> = {
                         >（按首次提交判定）</span
                     >
                 </div>
-                <a
+                <div
                     v-for="file in minute.files"
                     :key="file.id"
-                    :href="`/minutes/${minute.id}/files/${file.id}`"
-                    class="mt-2 flex items-center gap-2 border px-3 py-2 text-sm text-[#2f6a59]"
-                    ><Download :size="15" />V{{ file.version_no || '待归档' }} ·
-                    {{ file.original_name }}</a
+                    class="mt-2 flex flex-wrap items-center gap-3 border px-3 py-2 text-sm text-[#2f6a59]"
                 >
+                    <a
+                        v-if="canPreview(file)"
+                        :href="`/minutes/${minute.id}/files/${file.id}/preview`"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex min-w-0 flex-1 items-center gap-2 hover:underline"
+                        ><Eye :size="15" class="shrink-0" /><span class="truncate"
+                            >V{{ file.version_no || '待归档' }} ·
+                            {{ file.original_name }}</span
+                        ></a
+                    >
+                    <span v-else class="min-w-0 flex-1 truncate"
+                        >V{{ file.version_no || '待归档' }} ·
+                        {{ file.original_name }}</span
+                    >
+                    <a
+                        :href="`/minutes/${minute.id}/files/${file.id}`"
+                        class="inline-flex shrink-0 items-center gap-1 hover:underline"
+                        :aria-label="`下载 ${file.original_name}`"
+                        ><Download :size="15" />下载</a
+                    >
+                </div>
             </section>
         </article>
         <div class="mx-auto mt-4 flex max-w-5xl justify-end gap-3 print:hidden">

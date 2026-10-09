@@ -69,12 +69,32 @@ class MinuteActionController extends Controller
 
     public function download(MeetingMinute $minute, MinuteFile $file): StreamedResponse
     {
+        $this->authorizeFileAccess($minute, $file);
+
+        return Storage::disk(config('filesystems.default'))->download($file->object_key, $file->original_name);
+    }
+
+    public function preview(MeetingMinute $minute, MinuteFile $file): StreamedResponse
+    {
+        $this->authorizeFileAccess($minute, $file);
+        abort_unless($file->mime_type === 'application/pdf' && str_ends_with(strtolower($file->object_key), '.pdf'), 404);
+
+        $disk = Storage::disk(config('filesystems.default'));
+        abort_unless($disk->exists($file->object_key), 404);
+
+        return $disk->response($file->object_key, $file->original_name, [
+            'Content-Type' => 'application/pdf',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ], 'inline');
+    }
+
+    private function authorizeFileAccess(MeetingMinute $minute, MinuteFile $file): void
+    {
         Gate::authorize('view', $minute);
         abort_unless($file->meeting_minute_id === $minute->id, 404);
         if (request()->user()->hasGlobalMinuteAccess()) {
             abort_unless($file->version_no === $minute->current_version, 403);
         }
-
-        return Storage::disk(config('filesystems.default'))->download($file->object_key, $file->original_name);
     }
 }

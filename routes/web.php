@@ -24,6 +24,7 @@ Route::get('/access-denied', [CasController::class, 'denied'])->name('access.den
 
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('/dashboard/on-time', [DashboardController::class, 'onTime'])->name('dashboard.on-time');
     Route::post('/auth/logout', [CasController::class, 'logout'])->name('cas.logout');
     Route::get('/people/search', PersonSearchController::class)->name('people.search');
     Route::post('/participant-presets', [ParticipantPresetController::class, 'store'])->name('participant-presets.store');
@@ -42,6 +43,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/minutes/{minute}/archive', [MinuteActionController::class, 'archive'])->whereUuid('minute')->name('minutes.archive');
     Route::post('/minutes/{minute}/return', [MinuteActionController::class, 'returnForCorrection'])->whereUuid('minute')->name('minutes.return');
     Route::get('/minutes/{minute}/files/{file}', [MinuteActionController::class, 'download'])->whereUuid('minute')->name('minutes.files.download');
+    Route::get('/minutes/{minute}/files/{file}/preview', [MinuteActionController::class, 'preview'])->whereUuid('minute')->name('minutes.files.preview');
 
     Route::prefix('admin')->name('admin.')->middleware('role:system_admin')->group(function () {
         Route::get('/role-permissions', RolePermissionsController::class)->name('role-permissions.index');

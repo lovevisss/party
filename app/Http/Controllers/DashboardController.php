@@ -11,6 +11,21 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
+    public function onTime(Request $request): Response
+    {
+        abort_unless($request->user()->hasGlobalMinuteAccess(), 403);
+
+        $minutes = MeetingMinute::query()
+            ->where('status', MinuteStatus::Archived->value)
+            ->where('is_overdue', false)
+            ->with('meetingScope:id,name')
+            ->latest('archived_at')
+            ->orderByDesc('id')
+            ->paginate(20);
+
+        return Inertia::render('DashboardOnTime', ['minutes' => $minutes]);
+    }
+
     public function __invoke(Request $request): Response
     {
         $user = $request->user();

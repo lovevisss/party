@@ -42,7 +42,18 @@ const cards = computed(() => (props.isSystemAdmin ? adminCards : regularCards));
                 v-for="(card, i) in cards"
                 :key="card.key"
                 class="relative overflow-hidden border border-[#ded7c9] bg-white p-5 shadow-[0_8px_24px_rgba(48,55,45,.05)]"
+                :class="
+                    isSystemAdmin && card.key === 'on_time'
+                        ? 'cursor-pointer transition hover:border-[#2f6a59] hover:shadow-[0_12px_30px_rgba(48,55,45,.1)] focus-within:border-[#2f6a59]'
+                        : ''
+                "
             >
+                <Link
+                    v-if="isSystemAdmin && card.key === 'on_time'"
+                    href="/dashboard/on-time"
+                    class="absolute inset-0 z-10 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[#2f6a59]"
+                    aria-label="查看按时归档纪要明细"
+                />
                 <div class="mb-7 flex items-center justify-between">
                     <span class="text-sm text-[#68736e]">{{ card.label }}</span
                     ><component
@@ -54,6 +65,12 @@ const cards = computed(() => (props.isSystemAdmin ? adminCards : regularCards));
                 <p class="font-serif text-4xl font-semibold">
                     {{ stats[card.key] }}
                 </p>
+                <span
+                    v-if="isSystemAdmin && card.key === 'on_time'"
+                    class="absolute right-5 bottom-5 text-xs font-medium text-[#2f6a59]"
+                    aria-hidden="true"
+                    >查看明细 →</span
+                >
                 <div
                     class="absolute bottom-0 left-0 h-1 bg-[#2f6a59]"
                     :style="{ width: `${34 + i * 12}%` }"
